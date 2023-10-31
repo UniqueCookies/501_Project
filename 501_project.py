@@ -1,3 +1,5 @@
+import math
+import time
 import numpy as np
 import scipy as sp
 import pymetis
@@ -20,8 +22,7 @@ def a_test(v, i, A):
 
 # find eigenvalues,vectors
 def find_eigen(A, M):
-    eigenvalues, eigenvectors = sp.linalg.eig(A,M)
-
+    eigenvalues, eigenvectors = sp.linalg.eigh(A, M)
     min_eigenvalue_index = np.argmin(eigenvalues)
     min_eigenvalue = eigenvalues[min_eigenvalue_index]
     min_eigenvector = eigenvectors[:, min_eigenvalue_index]
@@ -29,27 +30,30 @@ def find_eigen(A, M):
     min_eigenvalue = min_eigenvalue.real
     return min_eigenvalue, min_eigenvector
 
-def find_eigen_numpy(A, M):
-    K = np.dot(np.linalg.inv(M),A)
-    eigenvalues, eigenvectors = np.linalg.eig(K)
 
-    min_eigenvalue_index = np.argmin(eigenvalues)
-    min_eigenvalue = eigenvalues[min_eigenvalue_index]
-    min_eigenvector = eigenvectors[:, min_eigenvalue_index]
-    min_eigenvector = min_eigenvector.real
-    min_eigenvalue = min_eigenvalue.real
-    return min_eigenvalue, min_eigenvector
+def check_positive(A):
+    if A != A.T:
+        print("Matrix is not symmetric")
+        return
+    eigenvalue, _ = np.linalg.eig(A)
+    if eigenvalue[0] > 0:
+        print("Matrix is positive definite.")
+    else:
+        print("Matrix is not positive (Hermitian).")
 
 
 # update v for each element
 def update_v(v, A, M):
     for i in range(v.size):
+        # for i in range(4):
         test_a = a_test(v, i, A)
         test_m = a_test(v, i, M)
-        _, min_eigenvector = find_eigen_numpy(test_a, test_m)
+        min_eigenvalue, min_eigenvector = find_eigen(test_a, test_m)
+        # min_eigenvalue, min_eigenvector = find_eigen_numpy(test_a, test_m)
         t = min_eigenvector[1] / min_eigenvector[0]
         v[i] += t
     norm = np.dot(v, np.dot(M, v))
+    norm = math.sqrt(norm)
     v = v / norm
     return v
 
@@ -58,32 +62,36 @@ def update_v(v, A, M):
 # two-level functions
 
 
-def A_p_coarse(v, A, P):
+def a_p_coarse(v, A, P):
     v = np.array(v)
     vAv = np.dot(v.T, np.dot(A, v))
     va1 = np.dot(v.T, np.dot(A, P))
     pAp = np.dot(P.T, np.dot(A, P))
+
     if isinstance(va1, (int, float)):
-        test_upper = np.array([vAv,va1])
-        test_lower = np.array([va1,pAp])
+        test_upper = np.array([vAv, va1])
+        test_lower = np.array([va1, pAp])
     else:
         test_upper = np.insert(va1, 0, vAv)
         test_lower = np.column_stack((va1.T, pAp))
     test = np.vstack((test_upper, test_lower))
+
     return test
 
 
 # update v for each element
 def update_v_coarse(v, A, M, P):
-    Ap = A_p_coarse(v, A, P)
-    Mp = A_p_coarse(v, M, P)
+    Ap = a_p_coarse(v, A, P)
+    Mp = a_p_coarse(v, M, P)
 
-    _, min_eigenvector = find_eigen(Ap, Mp)
+
+    min_eigenvalue, min_eigenvector = find_eigen(Ap, Mp)
     alpha = min_eigenvector[0]
     beta = min_eigenvector[1:]
 
     v = v + (1 / alpha) * np.dot(P, beta)
     norm = np.dot(v, np.dot(M, v))
+    norm = math.sqrt(norm)
     v = v / norm
     return v
 
@@ -101,27 +109,26 @@ def coarse_matrix(A, nc):  # A is the matrix, nc is the size of coarse matrix
     return P
 
 
-def finish_v_coarse_multi(nc, A, M,adj):
+def finish_v_coarse_double(nc, A, M, adj, v):
     P = coarse_matrix(adj, nc)
-    v = np.array([1 for i in range(A.shape[0])])
     v = update_v_coarse(v, A, M, P)
     return v
 
 
-def v_coarse_multi(total_size, A, M,adj,decrase_coarse):
-    v = np.array([1 for i in range(A.shape[0])])
-    nc = total_size//decrase_coarse
+def v_coarse_multi(total_size, A, M, adj, decrease_coarse,v):
+    nc = total_size // decrease_coarse
     P = coarse_matrix(adj, nc)
-    v = v_coarse_recursion(nc,v,A,M,P,decrase_coarse)
+    v = v_coarse_recursion(nc, v, A, M, P, decrease_coarse)
     return v
 
-def v_coarse_recursion(nc,v,A,M,P,decrase_coarse):
-    if nc < decrase_coarse+1 or nc<5:
+
+def v_coarse_recursion(nc, v, A, M, P, decrease_coarse):
+    if nc < decrease_coarse + 1 or nc < 5:
         v = update_v_coarse(v, A, M, P)
         return v
-    nc = int(nc//decrase_coarse)
+    nc = int(nc // decrease_coarse)
     P = coarse_matrix(adj, nc)
-    v = v_coarse_recursion(nc,v,A,M,P,decrase_coarse)
+    v = v_coarse_recursion(nc, v, A, M, P, decrease_coarse)
     v = update_v_coarse(v, A, M, P)
     return v
 
@@ -129,69 +136,75 @@ def v_coarse_recursion(nc,v,A,M,P,decrase_coarse):
 ##############################################################
 # A, M = set_up.make_graph()
 adj, A, M = set_up.make_graph_2(1000)
-#correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
-correct_answer= 0.0004810690277549212
-#print(f"The correct eigenvalue is {correct_answer}")
+# correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
+correct_answer = 0.0004810690277549212
+
+
+# print(f"The correct eigenvalue is {correct_answer}")
 
 ##############################################################
-decrease_coarse = 7
-total_size = A.shape[0]
-v= v_coarse_multi(total_size, A, M, adj, decrease_coarse)
-v = v.real
-#print(f"Eigenvector for coarse: {v}")
-v0 = v
-######
-max_iteration = 1000
-tol = 1e-7
-iteration = 0
-tolerance = 1000
-
-sigma = 100
-while iteration <= max_iteration and tolerance > tol:
-    v = update_v(v, A, M)
-    top = np.dot(v, np.dot(A, v))
-    bottom = np.dot(v, np.dot(M, v))
-    sigma = top / bottom
-    tolerance = abs(sigma - correct_answer)
-    iteration += 1
-
-if tolerance <= tol:
-    print(f"Converged to the desired tolerance with {iteration} steps.")
-else:
-    print("Maximum iterations reached without achieving the desired tolerance.")
-
-#print("Final Tolerance:", tolerance)
-#print("Approximated Eigenvalue (sigma):", sigma)
-#print(f"Eigenvector: {v}")
-
-print(f"difference is:{np.linalg.norm(v-v0)}")
+#Multi-Level Method
 
 ##############################################################
-#Two-level method
-'''''''''''
-max_iteration = 10000
-tol = 1e-7
-iteration = 0
-tolerance = 1000
+# Two-level method
+def main_method(A, M, nc):
+    np.random.seed(50)
+    v = np.random.rand(A.shape[0])
 
-#get new_v
-nc = 2
-v = np.array([1 for i in range(A.shape[0])])
-v = finish_v_coarse_multi(nc, A, M,adj)
-sigma = 100
-while iteration <= max_iteration and tolerance > tol:
-    v = update_v(v, A, M)
-    top = np.dot(v, np.dot(A, v))
-    bottom = np.dot(v, np.dot(M, v))
-    sigma = top / bottom
-    tolerance = abs(sigma - correct_answer)
-    iteration += 1
+    # Loop Set up with Tol
+    sigma = 1000
+    max_iteration = 100
+    tol = 1e-7
+    iteration = 0
+    tolerance = 1000
+    start_time = time.process_time()
+    while iteration <= max_iteration and tolerance > tol:
+        # fine level
+        v = update_v(v, A, M)
 
-if tolerance <= tol:
-    print(f"Converged to the desired tolerance with {iteration} steps.")
-else:
-    print("Maximum iterations reached without achieving the desired tolerance.")
+        # coarse level
+        v = finish_v_coarse_double(nc, A, M, adj, v)     #Two-level method
+        #v = v_coarse_multi(1000, A, M, adj, nc, v)          # Multi-level method
 
-print("Final Tolerance:", tolerance)
-print("Approximated Eigenvalue (sigma):", sigma)
-'''''''''''
+
+        # calculate eigenvalue
+        sigma_old = sigma
+        top = np.dot(v, np.dot(A, v))
+        bottom = np.dot(v, np.dot(M, v))
+        sigma = top / bottom
+
+        # Compare with real value
+        # tolerance = abs(sigma - correct_answer)
+        tolerance = abs(sigma - sigma_old)
+
+        iteration += 1
+    #display_result(tolerance, tol, iteration, sigma)
+    actual_error = abs(sigma-correct_answer)
+    end_time = time.process_time()
+    return iteration,sigma,actual_error, end_time-start_time
+
+
+def display_result(tolerance, tol, iteration, sigma):
+    # display results
+    if tolerance <= tol:
+        print(f"Converged to the desired tolerance with {iteration} steps.")
+    else:
+        print("Maximum iterations reached without achieving the desired tolerance.")
+
+    print("Final Tolerance:", tolerance)
+    print("Approximated Eigenvalue (sigma):", sigma)
+
+
+
+# Tow-level Method
+#nc = [2**i for i in range(1,10)]
+nc = [50, 100]
+for partition in nc:
+    iteration,sigma,actual_error,process_time= main_method(A, M, partition)
+    print(f"Iteration: {iteration} with coarse: {partition}. Actual Error: {actual_error}. Time used: {process_time}")
+
+'''''''''
+nc = 5
+iteration,sigma,actual_error,time = main_method(A, M, nc)
+print(f"Iteration: {iteration} with coarse: {nc}. Actual Error: {actual_error}. Time used: {time}")
+'''''''''
