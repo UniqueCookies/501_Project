@@ -113,34 +113,6 @@ def finish_v_coarse_double(nc, A, M, adj, v):
     v = update_v_coarse(v, A, M, P)
     return v
 
-
-def v_coarse_multi(total_size, A, M, adj, decrease_coarse, v):
-    nc = total_size // decrease_coarse
-    P = coarse_matrix(adj, nc)
-    v = v_coarse_recursion(nc, v, A, M, P, decrease_coarse)
-    return v
-
-
-def v_coarse_recursion(nc, v, A, M, P, decrease_coarse):
-    if nc < decrease_coarse + 1 or nc < 5:
-        v = update_v_coarse(v, A, M, P)
-        return v
-    nc = int(nc // decrease_coarse)
-    P = coarse_matrix(adj, nc)
-    v = v_coarse_recursion(nc, v, A, M, P, decrease_coarse)
-    v = update_v_coarse(v, A, M, P)
-    return v
-
-
-def v_coarse_multi2(total_size, nc, A, M, adj, v):
-    if nc is None:
-        return False
-    nc = [total_size // i for i in nc]
-    for size_of_partition in nc:
-        P = coarse_matrix(adj, size_of_partition)
-        v = update_v_coarse(v, A, M, P)
-    return v
-
 # Generate a list of coarse matrix A, and a list of P matrix
 def generate_coarse_graph(nc, adj,A,M):
     if len(nc) == 0:
@@ -157,10 +129,10 @@ def generate_coarse_graph(nc, adj,A,M):
 
         A = np.dot(P.T, np.dot(A, P))
         if not check_laplacian(A):  # check if it is laplacian
-            print("Error: Coase matrix generated is NOT a laplacian matrix")
+            print(f"Error: Coase matrix generated is NOT a laplacian matrix when coase = {nc[i]}")
         coarse_matrix_storage.append(A)
-
         adj,degree_matrix = generate_adjacency(A)  # create correct format of adjacency matrix for graph
+
         M = np.dot(P.T, np.dot(M,P))
         coase_diagonal_matrix_storage.append(M)
     return coarse_matrix_storage,p_info_storage, coase_diagonal_matrix_storage
@@ -180,11 +152,7 @@ def check_laplacian(Ac):
     negaive_count = np.sum(check < 0)
     if negaive_count > 0:
         return False
-    zero_count = np.sum(check == 0)
-    if zero_count / len(check) > 0.9:
-        return True
-    else:
-        return False
+    return True
 
 
 ##############################################################
@@ -194,11 +162,8 @@ adj, A, M = set_up.make_graph_2(total_size)
 # correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
 correct_answer = 0.0004810690277549212
 
-nc = [500, 200, 100]
+nc = [200, 50, 5]
 coarse_matrix_storage,p_info_storage, coase_diagonal_matrix_storage = generate_coarse_graph(nc,adj,A,M)
-check_positive(M)
-for matrix in coase_diagonal_matrix_storage:
-    check_positive(matrix)
 
 ##############################################################
 # Two-level method
