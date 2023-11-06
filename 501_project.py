@@ -32,7 +32,7 @@ def find_eigen(A, M):
 
 # Check if the matrix is positive definite
 def check_positive(A):
-    if A != A.T:
+    if not np.array_equal(A,A.T):
         print("Matrix is not symmetric")
         return
     eigenvalue, _ = np.linalg.eig(A)
@@ -141,21 +141,37 @@ def v_coarse_multi2(total_size, nc, A, M, adj, v):
         v = update_v_coarse(v, A, M, P)
     return v
 
-
-def generate_coarse_graph_wrapper(nc):
+# Generate a list of coarse matrix A, and a list of P matrix
+def generate_coarse_graph(nc, adj,A,M):
     if len(nc) == 0:
         return False
-    P = coarse_matrix(adj, nc[2])
-    Ac = generate_coarse_graph(nc, 2, P)
-    return Ac
+
+    # Store information for later-use
+    coarse_matrix_storage = []
+    coase_diagonal_matrix_storage = []
+    p_info_storage =[]
+
+    for i in range(len(nc)):
+        P = coarse_matrix(adj, nc[i])
+        p_info_storage.append(P)
+
+        A = np.dot(P.T, np.dot(A, P))
+        if not check_laplacian(A):  # check if it is laplacian
+            print("Error: Coase matrix generated is NOT a laplacian matrix")
+        coarse_matrix_storage.append(A)
+
+        adj,degree_matrix = generate_adjacency(A)  # create correct format of adjacency matrix for graph
+        M = np.dot(P.T, np.dot(M,P))
+        coase_diagonal_matrix_storage.append(M)
+    return coarse_matrix_storage,p_info_storage, coase_diagonal_matrix_storage
 
 
-def generate_coarse_graph(nc, n, P):
-    Ac = np.dot(P.T, np.dot(A, P))
-    if not check_laplacian(Ac):  # check if it is laplacian
-        print("Error: Not a laplacian matrix")
-    #Ac = set_up.adj_to_list(Ac) # change to the right format
-    return Ac
+# Generate correct format of adjancecy matrix for the graph partition function
+def generate_adjacency(graph_laplacian):
+    degree_matrix = np.diag(np.diag(graph_laplacian))
+    adjacency_matrix = degree_matrix - graph_laplacian
+    Ac = set_up.adj_to_list(adjacency_matrix)
+    return Ac,degree_matrix
 
 
 def check_laplacian(Ac):
@@ -179,9 +195,10 @@ adj, A, M = set_up.make_graph_2(total_size)
 correct_answer = 0.0004810690277549212
 
 nc = [500, 200, 100]
-nc = generate_coarse_graph_wrapper(nc)
-print(nc)
-
+coarse_matrix_storage,p_info_storage, coase_diagonal_matrix_storage = generate_coarse_graph(nc,adj,A,M)
+check_positive(M)
+for matrix in coase_diagonal_matrix_storage:
+    check_positive(matrix)
 
 ##############################################################
 # Two-level method
