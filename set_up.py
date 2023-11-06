@@ -24,6 +24,7 @@ def laplacian_matrix_sparse(mat):
     laplacian = D - mat
     return laplacian
 
+
 def make_graph():
     G = nx.Graph()
 
@@ -86,17 +87,19 @@ def make_graph_2(n):
     M = diags(diagonal_elements, format='csc')
     M = M.toarray()
 
-    adjacency_matrix = adj_to_list (adjacency_matrix)
-    return adjacency_matrix,laplacian_matrix, M
+    adjacency_matrix = adj_to_list(adjacency_matrix)
 
-def adj_to_list (adjacency_matrix):
+    return adjacency_matrix, laplacian_matrix, M
+
+
+def adj_to_list(adjacency_matrix):
     # Create an empty list to store the adjacency lists
     adjacency_list = []
 
     # Iterate through the rows of the adjacency matrix
     for row in adjacency_matrix:
         # Find the indices (column numbers) where the value is 1 (indicating an edge)
-        neighbor_indices = np.where(row == 1)[0]
+        neighbor_indices = np.where(row >= 1)[0]
 
         # Append the neighbor indices to the adjacency list
         adjacency_list.append(neighbor_indices)
@@ -105,4 +108,3 @@ def adj_to_list (adjacency_matrix):
     adjacency_list = [np.array(x) for x in adjacency_list]
 
     return adjacency_list
-
