@@ -4,11 +4,10 @@ import numpy as np
 import scipy as sp
 import pymetis
 import scipy.linalg
-
 import set_up
 
 
-# create 2x2 matrix
+# create 2x2 matrix for
 def a_test(v, i, A):
     vAv = np.dot(v, np.dot(A, v))
     va1 = np.dot(v, A[i])
@@ -31,6 +30,7 @@ def find_eigen(A, M):
     return min_eigenvalue, min_eigenvector
 
 
+# Check if the matrix is positive definite
 def check_positive(A):
     if A != A.T:
         print("Matrix is not symmetric")
@@ -42,7 +42,7 @@ def check_positive(A):
         print("Matrix is not positive (Hermitian).")
 
 
-# update v for each element
+# update v for each element in the general method
 def update_v(v, A, M):
     for i in range(v.size):
         # for i in range(4):
@@ -84,7 +84,6 @@ def update_v_coarse(v, A, M, P):
     Ap = a_p_coarse(v, A, P)
     Mp = a_p_coarse(v, M, P)
 
-
     min_eigenvalue, min_eigenvector = find_eigen(Ap, Mp)
     alpha = min_eigenvector[0]
     beta = min_eigenvector[1:]
@@ -115,7 +114,7 @@ def finish_v_coarse_double(nc, A, M, adj, v):
     return v
 
 
-def v_coarse_multi(total_size, A, M, adj, decrease_coarse,v):
+def v_coarse_multi(total_size, A, M, adj, decrease_coarse, v):
     nc = total_size // decrease_coarse
     P = coarse_matrix(adj, nc)
     v = v_coarse_recursion(nc, v, A, M, P, decrease_coarse)
@@ -133,17 +132,56 @@ def v_coarse_recursion(nc, v, A, M, P, decrease_coarse):
     return v
 
 
+def v_coarse_multi2(total_size, nc, A, M, adj, v):
+    if nc is None:
+        return False
+    nc = [total_size // i for i in nc]
+    for size_of_partition in nc:
+        P = coarse_matrix(adj, size_of_partition)
+        v = update_v_coarse(v, A, M, P)
+    return v
+
+
+def generate_coarse_graph_wrapper(nc):
+    if len(nc) == 0:
+        return False
+    P = coarse_matrix(adj, nc[2])
+    Ac = generate_coarse_graph(nc, 2, P)
+    return Ac
+
+
+def generate_coarse_graph(nc, n, P):
+    Ac = np.dot(P.T, np.dot(A, P))
+    if not check_laplacian(Ac):  # check if it is laplacian
+        print("Error: Not a laplacian matrix")
+    #Ac = set_up.adj_to_list(Ac) # change to the right format
+    return Ac
+
+
+def check_laplacian(Ac):
+    n = Ac.shape[0]
+    check = np.dot(Ac, np.ones(n))
+    negaive_count = np.sum(check < 0)
+    if negaive_count > 0:
+        return False
+    zero_count = np.sum(check == 0)
+    if zero_count / len(check) > 0.9:
+        return True
+    else:
+        return False
+
+
 ##############################################################
 # A, M = set_up.make_graph()
-adj, A, M = set_up.make_graph_2(1000)
+total_size = 1000
+adj, A, M = set_up.make_graph_2(total_size)
 # correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
 correct_answer = 0.0004810690277549212
 
+nc = [500, 200, 100]
+nc = generate_coarse_graph_wrapper(nc)
+print(nc)
 
-# print(f"The correct eigenvalue is {correct_answer}")
-
-##############################################################
-#Multi-Level Method
 
 ##############################################################
 # Two-level method
@@ -163,10 +201,9 @@ def main_method(A, M, nc):
         v = update_v(v, A, M)
 
         # coarse level
-        v = finish_v_coarse_double(nc, A, M, adj, v)     #Two-level method
-        #v = v_coarse_multi(1000, A, M, adj, nc, v)          # Multi-level method
-
-
+        # v = finish_v_coarse_double(nc, A, M, adj, v)  # Two-level method
+        # v = v_coarse_multi(1000, A, M, adj, nc, v)          # Multi-level method
+        v = v_coarse_multi2(total_size, nc, A, M, adj, v)
         # calculate eigenvalue
         sigma_old = sigma
         top = np.dot(v, np.dot(A, v))
@@ -176,12 +213,11 @@ def main_method(A, M, nc):
         # Compare with real value
         # tolerance = abs(sigma - correct_answer)
         tolerance = abs(sigma - sigma_old)
-
         iteration += 1
-    #display_result(tolerance, tol, iteration, sigma)
-    actual_error = abs(sigma-correct_answer)
+    # display_result(tolerance, tol, iteration, sigma)
+    actual_error = abs(sigma - correct_answer)
     end_time = time.process_time()
-    return iteration,sigma,actual_error, end_time-start_time
+    return iteration, sigma, actual_error, end_time - start_time
 
 
 def display_result(tolerance, tol, iteration, sigma):
@@ -195,16 +231,15 @@ def display_result(tolerance, tol, iteration, sigma):
     print("Approximated Eigenvalue (sigma):", sigma)
 
 
-
+'''''''''
 # Tow-level Method
 #nc = [2**i for i in range(1,10)]
-nc = [50, 100]
 for partition in nc:
     iteration,sigma,actual_error,process_time= main_method(A, M, partition)
     print(f"Iteration: {iteration} with coarse: {partition}. Actual Error: {actual_error}. Time used: {process_time}")
-
 '''''''''
-nc = 5
-iteration,sigma,actual_error,time = main_method(A, M, nc)
-print(f"Iteration: {iteration} with coarse: {nc}. Actual Error: {actual_error}. Time used: {time}")
+'''''''''
+nc = np.array([500,200,100])
+iteration,sigma,actual_error,time_used = main_method(A, M, nc)
+print(f"Iteration: {iteration} with coarse: {nc}. Actual Error: {actual_error}. Time used: {time_used}")
 '''''''''
