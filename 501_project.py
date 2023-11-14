@@ -5,6 +5,7 @@ import scipy as sp
 import pymetis
 import scipy.linalg
 import set_up
+from collections import Counter
 
 
 # Set up for the coordinate descent method
@@ -155,6 +156,7 @@ def generate_coarse_graph(nc, adj, A, M):
     for i in range(len(nc)):
         P = coarse_matrix(adj, nc[i])
         P_info_storage.append(P)
+        P = update_coarse_p(P, nc, i)
         Ac = np.dot(P.T, np.dot(Ac, P))
         if not check_laplacian(Ac):  # check if it is laplacian
             print(f"Error: Coarse matrix generated is NOT a laplacian matrix when coarse = {nc[i]}")
@@ -172,6 +174,20 @@ def generate_coarse_graph(nc, adj, A, M):
         M_p_storage.append(Mp)
 
     return coarse_matrix_storage, coase_diagonal_matrix_storage, A_p_storage, M_p_storage, P_info_storage
+
+
+# delete columns in P that does not have any nodes and update nc matrix
+def update_coarse_p(P, nc, n):
+    shape = P.shape[1]
+    # calculate column sums
+    column_sums = np.sum(P, axis=0)
+    # find which columns are 0
+    columns_to_delete = np.where(column_sums == 0)[0]
+    # delete them in P
+    P = np.delete(P, columns_to_delete, axis=1)
+    shape -= len(columns_to_delete)
+    nc[n] = shape
+    return P
 
 
 # generate coarse matrix for each coarse level except the last one
@@ -195,24 +211,22 @@ def generate_av_coarse_multi(Ap, Ac, A, v):
 def coordinate_descent_av(Ap, i):
     test = np.zeros((2, 2))
     test[0][0] = Ap[0][0]
-    test[0][1] = Ap[0][i+1]
-    test[1][0] = Ap[i+1][0]
-    test[1][1] = Ap[i+1][i+1]
+    test[0][1] = Ap[0][i + 1]
+    test[1][0] = Ap[i + 1][0]
+    test[1][1] = Ap[i + 1][i + 1]
     return test
 
 
-def coordinate_descent_coarse(Ap,Mp,v,M):
+def coordinate_descent_coarse(Ap, Mp, diagonal, v):
     size = v.size
-    for i in range(size-1):
+    for i in range(size - 1):
         test_a = coordinate_descent_av(Ap, i)
         test_m = coordinate_descent_av(Mp, i)
 
         min_eigenvalue, min_eigenvector = find_eigen(test_a, test_m)
-        t = min_eigenvector[1]
-        v[i] += t
-    norm = np.dot(v, np.dot(M, v))
-    norm = math.sqrt(norm)
-    v = v / norm
+        t = min_eigenvector[1] / min_eigenvector[0]
+        v[i + 1] += t
+
     return v
 
 
@@ -232,10 +246,11 @@ def update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix
     P = P_info_storage[n]
     beta = np.dot(P, beta)
 
-    for i in range(n-1, -1, -1):
+    for i in range(n - 1, -1, -1):
         Ap = generate_av_coarse_multi(A_p_storage[i], coarse_matrix_storage[i], A, v)
         Mp = generate_av_coarse_multi(M_p_storage[i], coarse_diagonal_matrix_storage[i], M, v)
-        beta = coordinate_descent_coarse(Ap,Mp,beta,coarse_diagonal_matrix_storage[i])
+        beta += coordinate_descent_coarse(Ap, Mp, coarse_diagonal_matrix_storage[i], beta)
+
         P = P_info_storage[i]
         beta = np.dot(P, beta)
 
@@ -243,14 +258,18 @@ def update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix
     norm = np.dot(v, np.dot(M, v))
     norm = math.sqrt(norm)
     v = v / norm
+
     return v
+
 
 def check_diagonal(A):
     n = A.shape[0]
-    for i in range (n):
-        if A[i][i] <=0:
+    for i in range(n):
+        if A[i][i] <= 0:
             print(f"Not Positive Definite at {i} and the value is {A[i][i]}")
     return
+
+
 ##############################################################
 # A, M = set_up.make_graph()
 total_size = 1000
@@ -258,26 +277,30 @@ adj, A, M = set_up.make_graph_2(total_size)
 # correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
 correct_answer = 0.0004810690277549212
 
-nc = [200,40,2]
+nc = [500, 200, 50, 5]
 coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage, P_info_storage = generate_coarse_graph(
- nc, adj, A, M)
+    nc, adj, A, M)
 
-for num in coarse_diagonal_matrix_storage:
-    check_diagonal(num)
 
-#generate random initial vector v
+
+# generate random initial vector v
 np.random.seed(50)
 v = np.random.rand(A.shape[0])
 
-
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 5
-
-while tolerance > 1e-7 and iteration<MAXINTERATION:
+MAXINTERATION = 100
+'''''''''
+while tolerance > 1e-7 and iteration < MAXINTERATION:
     v = update_v(v, A, M)
+    if iteration < 5:
+        top = np.dot(v, np.dot(A, v))
+        bottom = np.dot(v, np.dot(M, v))
+        sigma = top / bottom
+        tolerance = abs(sigma - correct_answer)
+        print(f"after first step is {tolerance}")
     v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage,
-                          P_info_storage, nc)
+                              P_info_storage, nc)
     top = np.dot(v, np.dot(A, v))
     bottom = np.dot(v, np.dot(M, v))
     sigma = top / bottom
@@ -285,7 +308,8 @@ while tolerance > 1e-7 and iteration<MAXINTERATION:
     print(tolerance)
     iteration += 1
 
-
+print(f"final answer is{sigma} with iteration {iteration}")
+'''''''''
 
 
 ##############################################################
