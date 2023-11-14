@@ -35,6 +35,77 @@ def update_v(v, A, M):
     return v
 
 
+def a_bar(v, r_bar, v_old, A):
+    if (np.all(v_old == 0)):
+        test = np.zeros((2, 2))
+    else:
+        test = np.zeros((3, 3))
+
+        # 3x3 portion
+        vAv_old = np.dot(v, np.dot(A, v_old))
+        test[0][2] = vAv_old
+        test[2][0] = vAv_old
+
+        rAv_old = np.dot(r_bar, np.dot(A, v_old))
+        test[1][2] = rAv_old
+        test[2][1] = rAv_old
+
+        v_oldAv_old = np.dot(v_old, np.dot(A, v_old))
+        test[2][2] = v_oldAv_old
+
+    vAv = np.dot(v, np.dot(A, v))
+    test[0][0] = vAv
+    rAr = np.dot(r_bar, np.dot(A, r_bar))
+    test[1][1] = rAr
+
+    vAr = np.dot(v, np.dot(A, r_bar))
+    test[0][1] = vAr
+    test[1][0] = vAr
+
+    # check positive definiteness
+    if not check_positive(test):
+        print("Error: Av or Mv is not positive definite")
+    return test
+
+
+def update_v_LOPCG(A, M, v, v_old,sigma):
+    # for preconditioner: right now just identity matrix
+    I = np.eye(A.shape[0])
+
+    #create r_bar
+    if sigma==0:
+        sigma = np.dot(v, np.dot(A, v)) / np.dot(v, np.dot(M, v))
+    r = np.dot(A, v) - sigma * np.dot(M, v)
+    r_bar = np.dot(I,r)
+
+    #generate Av, Mv
+    a_test = a_bar(v, r_bar, v_old, A)
+    m_test = a_bar(v, r_bar, v_old, M)
+
+    #find eigenvalue and eigenvector
+    min_eigenvalue, min_eigenvector = find_eigen(a_test, m_test)
+
+    sigma = min_eigenvalue
+    alpha = min_eigenvector[0]
+    beta = min_eigenvector[1]
+    if (np.all(v_old == 0)):
+        gamma = 0
+    else:
+        gamma = min_eigenvector[2]
+
+    y = beta * r_bar + gamma * v_old
+    v_old = v
+    v = v + 1/alpha * y
+
+    #normalize
+    norm = np.dot(v, np.dot(M, v))
+    norm = math.sqrt(norm)
+    v = v / norm
+
+
+    return v,sigma,v_old
+
+
 ###########################################################################
 # find eigenvalues,vectors for the coarsest level
 def find_eigen(A, M):
@@ -76,16 +147,12 @@ def generate_adjacency(graph_laplacian):
 # Check if the matrix is positive definite
 def check_positive(A):
     if not np.array_equal(A, A.T):
-        print(A)
         return False
     eigenvalue, _ = np.linalg.eig(A)
     if eigenvalue[0] > 0:
         return True
     else:
-        print(A)
-        print("Error")
         return False
-    print(A)
     return False
 
 
@@ -281,26 +348,33 @@ nc = [500, 200, 50, 5]
 coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage, P_info_storage = generate_coarse_graph(
     nc, adj, A, M)
 
-
-
 # generate random initial vector v
 np.random.seed(50)
 v = np.random.rand(A.shape[0])
 
+
+#Set up for the LOPCG
+v_old = np.zeros(A.shape[0])
+sigma = 0
+
+
 tolerance = 1000
 iteration = 0
 MAXINTERATION = 100
-'''''''''
+
 while tolerance > 1e-7 and iteration < MAXINTERATION:
-    v = update_v(v, A, M)
+    v,sigma,v_old = update_v_LOPCG(A, M, v, v_old,sigma)
+    #v = update_v(v, A, M)
+    '''''''''
     if iteration < 5:
         top = np.dot(v, np.dot(A, v))
         bottom = np.dot(v, np.dot(M, v))
         sigma = top / bottom
         tolerance = abs(sigma - correct_answer)
         print(f"after first step is {tolerance}")
-    v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage,
-                              P_info_storage, nc)
+     '''''''''
+    #v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage,
+                            #  P_info_storage, nc)
     top = np.dot(v, np.dot(A, v))
     bottom = np.dot(v, np.dot(M, v))
     sigma = top / bottom
@@ -309,7 +383,7 @@ while tolerance > 1e-7 and iteration < MAXINTERATION:
     iteration += 1
 
 print(f"final answer is{sigma} with iteration {iteration}")
-'''''''''
+
 
 
 ##############################################################
