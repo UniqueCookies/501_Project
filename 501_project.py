@@ -35,6 +35,7 @@ def update_v(v, A, M):
     return v
 
 
+# Setup Av and Mv for the LOPCG method
 def a_bar(v, r_bar, v_old, A):
     if (np.all(v_old == 0)):
         test = np.zeros((2, 2))
@@ -68,21 +69,22 @@ def a_bar(v, r_bar, v_old, A):
     return test
 
 
-def update_v_LOPCG(A, M, v, v_old,sigma):
+# LOPCG method in replace of coordinate descent
+def update_v_LOPCG(A, M, v, v_old, sigma):
     # for preconditioner: right now just identity matrix
     I = np.eye(A.shape[0])
 
-    #create r_bar
-    if sigma==0:
+    # create r_bar
+    if sigma == 0:
         sigma = np.dot(v, np.dot(A, v)) / np.dot(v, np.dot(M, v))
     r = np.dot(A, v) - sigma * np.dot(M, v)
-    r_bar = np.dot(I,r)
+    r_bar = np.dot(I, r)
 
-    #generate Av, Mv
+    # generate Av, Mv
     a_test = a_bar(v, r_bar, v_old, A)
     m_test = a_bar(v, r_bar, v_old, M)
 
-    #find eigenvalue and eigenvector
+    # find eigenvalue and eigenvector
     min_eigenvalue, min_eigenvector = find_eigen(a_test, m_test)
 
     sigma = min_eigenvalue
@@ -95,16 +97,49 @@ def update_v_LOPCG(A, M, v, v_old,sigma):
 
     y = beta * r_bar + gamma * v_old
     v_old = v
-    v = v + 1/alpha * y
+    v = v + 1 / alpha * y
 
-    #normalize
+    # normalize
     norm = np.dot(v, np.dot(M, v))
     norm = math.sqrt(norm)
     v = v / norm
 
+    return v, sigma, v_old
 
-    return v,sigma,v_old
 
+# setup Av and Mv for multiple eigenvalues
+def a_multi (A,X,W):
+    p = X.shape[1]
+    a_test = np.zeros((2*p,2*p))
+
+    Ax = np.dot(A,X)
+    Aw = np.dot(A,W)
+    xAx = np.dot(X.T,Ax)
+    a_test[:p,:p] = xAx
+
+    xAw = np.dot(X.T, Aw)
+    wAx = xAw.T
+    a_test[:p,p:] = xAw
+    a_test[p:,:p] = wAx
+
+    wAw = np.dot(W.T, Aw)
+    a_test[p:,p:] = wAw
+
+    return a_test
+
+def update_v_multiple_eigenvalues(A,M,X,W):
+    Av = a_multi(A,X,W)
+    Mv = a_multi(M,X,W)
+    print(Av)
+    print(Mv)
+    check_positive(Av)
+    check_positive(Mv)
+
+
+
+    #eigenvalues, eigenvectors = sp.linalg.eigh(Av, Mv)
+
+    #return eigenvalues,eigenvectors
 
 ###########################################################################
 # find eigenvalues,vectors for the coarsest level
@@ -146,12 +181,16 @@ def generate_adjacency(graph_laplacian):
 # Checking for various features in the method
 # Check if the matrix is positive definite
 def check_positive(A):
-    if not np.array_equal(A, A.T):
+    if not np.allclose(A, A.T,atol=1e-7):
+        print("Matrix is not symmetric")
         return False
     eigenvalue, _ = np.linalg.eig(A)
-    if eigenvalue[0] > 0:
+    if np.all(eigenvalue> 0):
+        print("it is positive definite")
+        print(eigenvalue)
         return True
     else:
+        print("Matrix is not positive definite")
         return False
     return False
 
@@ -164,6 +203,15 @@ def check_laplacian(Ac):
     if negaive_count > 0:
         return False
     return True
+
+
+# check if diagonal is positive
+def check_diagonal(A):
+    n = A.shape[0]
+    for i in range(n):
+        if A[i][i] <= 0:
+            print(f"Not Positive Definite at {i} and the value is {A[i][i]}")
+    return
 
 
 ###########################################################################
@@ -329,42 +377,96 @@ def update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix
     return v
 
 
-def check_diagonal(A):
-    n = A.shape[0]
-    for i in range(n):
-        if A[i][i] <= 0:
-            print(f"Not Positive Definite at {i} and the value is {A[i][i]}")
-    return
+##########################################################
+# gram_schmidt to generate a set of orthonormal vectors
+def gram_schmidt(A, M):
+    (n, m) = A.shape
+    W = np.zeros((n, m))
+
+    for i in range(m):
+
+        q = A[:, i]  # i-th column of A
+
+        for j in range(i):
+            q = q - np.dot(A[:, j], A[:, i]) * A[:, j]
+
+        if np.array_equal(q, np.zeros(q.shape)):
+            raise np.linalg.LinAlgError("The column vectors are not linearly independent")
+
+        # normalize q
+        q = q / np.sqrt(np.dot(q, np.dot(M, q)))
+
+        # write the vector back in the matrix
+        W[:, i] = q
+    return W
+
+
+# generate linearly independent initial vectors
+def generate_initial_vectors(n, p):
+    V = np.zeros((n, p))
+    for i in range(p):
+        np.random.seed(i)
+        V[:, i] = np.random.rand(A.shape[0])
+
+        iteration = 0
+        MAXINTERATION = 10
+        while not np.linalg.matrix_rank(V) == i + 1 and iteration < MAXINTERATION:
+            np.random.seed(i + 1)
+            V[:, i] = np.random.rand(A.shape[0])
+            iteration += 1
+    if np.linalg.matrix_rank(V) == p:
+        return V
+    else:
+        print("Error: Unable to generate linearly independent vectors")
+        return False
+
+
+# double check if W is M-orthornormal
+def check_if_orthonormal(W, M):
+    for i in range(W.shape[1]):
+        v = W[:, i]
+
+        # check if normalized
+        norm = np.dot(v, np.dot(M, v))
+        if not abs(1 - norm) < 1e-5:
+            print("Each vector is not M - normalized")
+    return np.linalg.matrix_rank(W) == W.shape[1]
 
 
 ##############################################################
 # A, M = set_up.make_graph()
 total_size = 1000
 adj, A, M = set_up.make_graph_2(total_size)
-# correct_answer, smallest_eigenvector = find_eigen_numpy(A, M)
+# correct_answer, smallest_eigenvector = find_eigen(A, M)
+# print(correct_answer)
 correct_answer = 0.0004810690277549212
 
-nc = [500, 200, 50, 5]
-coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage, P_info_storage = generate_coarse_graph(
-    nc, adj, A, M)
+# nc = [500, 200, 50, 5]
+# coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage, P_info_storage = generate_coarse_graph(
+#   nc, adj, A, M)
 
 # generate random initial vector v
-np.random.seed(50)
-v = np.random.rand(A.shape[0])
+# np.random.seed(50)
+# v = np.random.rand(A.shape[0])
 
+p = 1
+X = generate_initial_vectors(A.shape[0], p)
+W = gram_schmidt(X, M)
 
-#Set up for the LOPCG
+eigenvalue,eigenvector = update_v_multiple_eigenvalues(A,M,X,W)
+print(eigenvalue,eigenvector)
+
+# Set up for the LOPCG
 v_old = np.zeros(A.shape[0])
 sigma = 0
 
-
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 100
+MAXINTERATION = 0
 
 while tolerance > 1e-7 and iteration < MAXINTERATION:
-    v,sigma,v_old = update_v_LOPCG(A, M, v, v_old,sigma)
-    #v = update_v(v, A, M)
+    v, sigma, v_old = update_v_LOPCG(A, M, v, v_old, sigma)
+    # v = update_v(v, A, M)
     '''''''''
     if iteration < 5:
         top = np.dot(v, np.dot(A, v))
@@ -373,17 +475,17 @@ while tolerance > 1e-7 and iteration < MAXINTERATION:
         tolerance = abs(sigma - correct_answer)
         print(f"after first step is {tolerance}")
      '''''''''
-    #v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage,
-                            #  P_info_storage, nc)
+    # v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage, A_p_storage, M_p_storage,
+    #  P_info_storage, nc)
     top = np.dot(v, np.dot(A, v))
     bottom = np.dot(v, np.dot(M, v))
     sigma = top / bottom
     tolerance = abs(sigma - correct_answer)
-    print(tolerance)
+    # print(tolerance)
     iteration += 1
 
-print(f"final answer is{sigma} with iteration {iteration}")
 
+# print(f"final answer is{sigma} with iteration {iteration}")
 
 
 ##############################################################
