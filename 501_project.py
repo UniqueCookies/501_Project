@@ -4,8 +4,8 @@ import numpy as np
 import scipy as sp
 import pymetis
 import scipy.linalg
-import set_up
 from collections import Counter
+import set_up
 
 
 # Set up for the coordinate descent method
@@ -391,7 +391,11 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
         Mc = coarse_diagonal_matrix_storage[0]
         P = P_info_storage [0]
 
-        #Use
+        #Use new_method
+        vc = coarse_vector_storage[0]
+
+
+    return False
 
 
 
@@ -492,13 +496,13 @@ P = P_info_storage[1]
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 50
+MAXINTERATION = 0
 
 while tolerance > 1e-7 and iteration < MAXINTERATION:
     # v, sigma, v_old = update_v_LOPCG(A, M, v, v_old, sigma)
     # v= update_v(v, A, M)
-    v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
-                              P_info_storage, coarse_vector_storage, nc)
+   # v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
+                             # P_info_storage, coarse_vector_storage, nc)
     '''''''''
     if iteration < 5:
         top = np.dot(v, np.dot(A, v))
