@@ -394,6 +394,8 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
         #Use new_method
         vc = coarse_vector_storage[0]
 
+    if n==2:
+        return True
 
     return False
 
