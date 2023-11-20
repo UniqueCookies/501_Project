@@ -131,8 +131,6 @@ def a_multi(A, X, W):
 def update_v_multiple_eigenvalues(A, M, X, W):
     Av = a_multi(A, X, W)
     Mv = a_multi(M, X, W)
-    print(Av)
-    print(Mv)
     check_positive(Av)
     check_positive(Mv)
 
@@ -262,7 +260,7 @@ def update_v_coarse(v, A, M, P):
 # Generate a list of coarse matrix A,M, and a list of P matrix
 def generate_coarse_graph(nc, adj, A, M):
     if len(nc) == 0:
-        return False
+        return None,None,None,None
 
     # Store information for later-use
     coarse_matrix_storage = []
@@ -276,8 +274,8 @@ def generate_coarse_graph(nc, adj, A, M):
     Mc = M
     for i in range(len(nc)):
         P = coarse_matrix(adj, nc[i])
-        P_info_storage.append(P)
         P = update_coarse_p(P, nc, i)
+        P_info_storage.append(P)
         Ac = np.dot(P.T, np.dot(Ac, P))
         if not check_laplacian(Ac):  # check if it is laplacian
             print(f"Error: Coarse matrix generated is NOT a laplacian matrix when coarse = {nc[i]}")
@@ -329,7 +327,9 @@ def a_test_multi(Ac, vc, Pvc):
 def update_v_multi_initial(Ac, Mc, v, Pvc):
     Av = a_test_multi(Ac, v, Pvc)
     Mv = a_test_multi(Mc, v, Pvc)
-    _, eigenvector = find_eigen(Av, Mv)
+    eigenvalue, eigenvector = find_eigen(Av, Mv)
+    print(f"eigenvalue is {eigenvalue}")
+    print(f"eigenvector is {eigenvector}")
 
     return eigenvector[0] * v + eigenvector[1] * Pvc
 
@@ -389,10 +389,22 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
     if n ==1:
         Ac = coarse_matrix_storage[0]
         Mc = coarse_diagonal_matrix_storage[0]
-        P = P_info_storage [0]
+        P = P_info_storage[0]
 
-        #Use new_method
-        vc = coarse_vector_storage[0]
+        #directly solving with coarse information
+
+        _, min_eigenvector = find_eigen(Ac, Mc)
+        Pvc = np.dot (P,min_eigenvector)
+
+        v = update_v_multi_initial(A, M, v, Pvc)
+
+        norm = np.dot(v, np.dot(M, v))
+        norm = math.sqrt(norm)
+        v = v / norm
+
+
+
+        return v
 
     if n==2:
         return True
@@ -466,7 +478,7 @@ adj, A, M = set_up.make_graph_2(total_size)
 # print(correct_answer)
 correct_answer = 0.0004810690277549212
 
-nc = [200, 5]
+nc = [500]
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = generate_coarse_graph(
     nc, adj, A, M)
 
@@ -474,23 +486,7 @@ coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_ve
 np.random.seed(50)
 v = np.random.rand(A.shape[0])
 
-'''''''''''
-v = update_v(v, A, M)
-error = check_eigen(A,M,v,correct_answer)
-print(error)
 
-Ac = coarse_matrix_storage[0]
-Mc = coarse_diagonal_matrix_storage[0]
-P = P_info_storage[0]
-v = update_v(np.dot(P.T,v),Ac,Mc)     #using Pv as the starting point
-error = check_eigen(A,M,np.dot(P,v),correct_answer)
-print(error)
-
-Ac = coarse_matrix_storage[1]
-Mc = coarse_diagonal_matrix_storage[1]
-P = P_info_storage[1]
-
-'''''''''''
 
 # Set up for the LOPCG
 # v_old = np.zeros(A.shape[0])
@@ -498,13 +494,13 @@ P = P_info_storage[1]
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 0
+MAXINTERATION = 50
 
 while tolerance > 1e-7 and iteration < MAXINTERATION:
     # v, sigma, v_old = update_v_LOPCG(A, M, v, v_old, sigma)
     # v= update_v(v, A, M)
-   # v = update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
-                             # P_info_storage, coarse_vector_storage, nc)
+    v = update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
+                               P_info_storage, coarse_vector_storage, nc)
     '''''''''
     if iteration < 5:
         top = np.dot(v, np.dot(A, v))
@@ -522,7 +518,7 @@ while tolerance > 1e-7 and iteration < MAXINTERATION:
     iteration += 1
 
 
-# print(f"final answer is{sigma} with iteration {iteration}")
+print(f"Final Eigenvalue is{sigma} with iteration {iteration} and tolerance {tolerance}")
 
 
 ##############################################################
@@ -559,7 +555,7 @@ def main_method(A, M, nc):
         # tolerance = abs(sigma - sigma_old)
         # print(tolerance)
         iteration += 1
-    # display_result(tolerance, tol, iteration, sigma)
+    display_result(tolerance, tol, iteration, sigma)
     actual_error = abs(sigma - correct_answer)
     end_time = time.process_time()
     return iteration, sigma, actual_error, end_time - start_time
