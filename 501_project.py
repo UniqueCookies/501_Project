@@ -193,9 +193,12 @@ def check_positive(A):
         return False
     eigenvalue, _ = np.linalg.eig(A)
     if np.all(eigenvalue > 0):
+        # min_eigenvalue_index = np.argmin(eigenvalue)
+        # print(f"Matrix is positive definite with min_eigenvalue {eigenvalue[min_eigenvalue_index]}")
         return True
     else:
-        print("Matrix is not positive definite")
+        min_eigenvalue_index = np.argmin(eigenvalue)
+        print(f"Matrix is not positive definite with eigenvalue {eigenvalue[min_eigenvalue_index]}")
         return False
     return False
 
@@ -267,30 +270,41 @@ def generate_coarse_graph(nc, adj, A, M):
     P_info_storage = []
     coase_diagonal_matrix_storage = []
     coarse_vector_storage = []
+    A_p_storage = []
+    M_p_storage = []
 
     np.random.seed(50)
 
     Ac = A
     Mc = M
+    A_p = A
+    M_p = M
     for i in range(len(nc)):
         P = coarse_matrix(adj, nc[i])
+
         P = update_coarse_p(P, nc, i)
+
         P_info_storage.append(P)
+
+        A_p = np.dot(A_p, P)
         Ac = np.dot(P.T, np.dot(Ac, P))
         if not check_laplacian(Ac):  # check if it is laplacian
             print(f"Error: Coarse matrix generated is NOT a laplacian matrix when coarse = {nc[i]}")
+        A_p_storage.append(A_p)
         coarse_matrix_storage.append(Ac)
         adj, degree_matrix = generate_adjacency(Ac)  # create correct format of adjacency matrix for graph
 
+        M_p = np.dot(M_p, P)
         Mc = np.dot(P.T, np.dot(Mc, P))
         if not check_positive(Mc):
             print(f"Error: Coarse M matrix is not positive definite.")
         coase_diagonal_matrix_storage.append(Mc)
+        M_p_storage.append(M_p)
 
         v = np.random.rand(Ac.shape[0])
         coarse_vector_storage.append(v)
 
-    return coarse_matrix_storage, coase_diagonal_matrix_storage, P_info_storage, coarse_vector_storage
+    return coarse_matrix_storage, coase_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, A_p_storage, M_p_storage
 
 
 # delete columns in P that does not have any nodes and update nc matrix
@@ -328,7 +342,7 @@ def update_v_multi_initial(Ac, Mc, v, Pvc):
     Av = a_test_multi(Ac, v, Pvc)
     Mv = a_test_multi(Mc, v, Pvc)
     eigenvalue, eigenvector = find_eigen(Av, Mv)
-    print(f"weight is {eigenvector[1]}")
+    # print(f"weight is {eigenvector}")
     return eigenvector[0] * v + eigenvector[1] * Pvc
 
 
@@ -345,31 +359,32 @@ def update_v_upward(Ac, Mc, P, vc, v):
 
 
 # create matrix in the coarsest level --> may not be the correct algorithm
-def a_coarst(Ac, vc):
+def a_coarsest(Ac, vc, Ap, A):
     n = Ac.shape[0]
     test = np.zeros((n + 1, n + 1))
-    temp = np.dot(vc.T, Ac)
-    test[0][0] = np.dot(temp, vc)
+    temp = np.dot(vc.T, Ap)
+    test[0][0] = np.dot(vc, np.dot(A, vc))
     test[0][1:] = temp
     test[1:, 0] = temp
     test[1:, 1:] = Ac
     return test
 
 
-def solve_vc_coarst(Ac, Mc, vc):
-
-    Acv = a_coarst(Ac,vc)
-    Mcv = a_coarst(Mc,vc)
-    check_positive(Ac)
-    _,eigenvector = find_eigen(Acv, Mcv)
+def solve_vc_coarst(Ac, Mc, Ap, Mp, A, M, P, vc):
+    Acv = a_coarsest(Ac, vc, Ap, A)
+    Mcv = a_coarsest(Mc, vc, Mp, M)
+    check_positive(Acv)
+    check_positive(Mcv)
+    _, eigenvector = find_eigen(Acv, Mcv)
     alpha = eigenvector[0]
     beta = eigenvector[1:]
 
-    vc = vc + 1/alpha * beta
-    norm = np.dot(vc,np.dot(Mc,vc))
+    vc = vc + 1 / alpha * np.dot(P, beta)
+
+    norm = np.dot(vc, np.dot(M, vc))
     norm = math.sqrt(norm)
-    print(f"norm is {norm}")
-    vc = vc/norm
+    vc = vc / norm
+
     return vc
 
 
@@ -402,7 +417,7 @@ def update_v_coarse_multi(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix
 
 
 def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
-                           P_info_storage, coarse_vector_storage, nc):
+                           P_info_storage, coarse_vector_storage, A_p_storage, M_p_storage, nc):
     # fine level
     v = update_v(v, A, M)
 
@@ -414,31 +429,40 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
 
     # Case 2: Tow-Level Method
     if n == 1:
+        print("two level method ")
         Ac = coarse_matrix_storage[0]
         Mc = coarse_diagonal_matrix_storage[0]
+        Ap = A_p_storage[0]
+        Mp = M_p_storage[0]
         P = P_info_storage[0]
-        vc = coarse_vector_storage[0]
 
+        vc = v
         # Method: directly solving with coarse information
         # _, vc = find_eigen(Ac, Mc)  #directly solving in the coarsest level
-        vc = solve_vc_coarst(Ac, Mc, vc)  # incoporate vc information
-        #vc = update_v(vc, Ac, Mc) #gradient descent on the coarst -> does not help with result that much
-        coarse_vector_storage[0] = vc #update coarse
+        # vc = coarse_vector_storage[0] #use its own coarse vector -> cause the matrix to have 0 eigenvalue
+        # vc = np.dot (v,P)
+        vc = solve_vc_coarst(Ac, Mc, Ap, Mp, A, M, P, vc)  # incorporate vc information
+        # vc = update_v(vc, Ac, Mc) #gradient descent on the coarsest -> does not help with result that much
+        coarse_vector_storage[0] = vc  # update coarse
 
-        top = np.dot(v, np.dot(A, v))
-        bottom = np.dot(v, np.dot(M, v))
-        sigma = top / bottom
-        tolerance = abs(sigma - 0.0004810690277549212)
-        print(f"tolerance before coarsing is {tolerance}")
+        # Convergence checking for the coarse level
+        # top = np.dot(v, np.dot(A, v))
+        # bottom = np.dot(v, np.dot(M, v))
+        # sigma = top / bottom
+        # tolerance = abs(sigma - 0.0004810690277549212)
+        # print(f"tolerance before coarsing is {tolerance}")
 
-        Pvc = np.dot(P, vc)
-        v = update_v_multi_initial(A, M, v, Pvc)
+        v = update_v_multi_initial(A, M, v, vc)
 
         return v
 
     # Multilevel Method
+    # gradient descent going down
+    print ("multiple-level method")
 
-    return False
+
+
+    return v
 
 
 ##########################################################
@@ -505,8 +529,8 @@ adj, A, M = set_up.make_graph_2(total_size)
 # print(correct_answer)
 correct_answer = 0.0004810690277549212
 
-nc = [2]
-coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = generate_coarse_graph(
+nc = [200, 2]
+coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, A_p_storage, M_p_storage = generate_coarse_graph(
     nc, adj, A, M)
 
 # generate random initial vector v
@@ -519,13 +543,13 @@ v = np.random.rand(A.shape[0])
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 50
+MAXINTERATION = 10
 
 while tolerance > 1e-7 and iteration < MAXINTERATION:
     # v, sigma, v_old = update_v_LOPCG(A, M, v, v_old, sigma)
     # v= update_v(v, A, M)
     v = update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matrix_storage,
-                               P_info_storage, coarse_vector_storage, nc)
+                               P_info_storage, coarse_vector_storage, A_p_storage, M_p_storage, nc)
     '''''''''
     if iteration < 5:
         top = np.dot(v, np.dot(A, v))
@@ -539,7 +563,7 @@ while tolerance > 1e-7 and iteration < MAXINTERATION:
     bottom = np.dot(v, np.dot(M, v))
     sigma = top / bottom
     tolerance = abs(sigma - correct_answer)
-    print(tolerance)
+    #print(tolerance)
     iteration += 1
 
 print(f"Final Eigenvalue is{sigma} with iteration {iteration} and tolerance {tolerance}")
