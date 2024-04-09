@@ -263,7 +263,7 @@ def update_v_coarse(v, A, M, P):
 # Generate a list of coarse matrix A,M, and a list of P matrix
 def generate_coarse_graph(nc, adj, A, M):
     if len(nc) == 0:
-        return None, None, None, None
+        return None, None, None, None, None, None
 
     # Store information for later-use
     coarse_matrix_storage = []
@@ -342,7 +342,7 @@ def update_v_multi_initial(Ac, Mc, v, Pvc):
     Av = a_test_multi(Ac, v, Pvc)
     Mv = a_test_multi(Mc, v, Pvc)
     eigenvalue, eigenvector = find_eigen(Av, Mv)
-    # print(f"weight is {eigenvector}")
+    print(f"weight is {eigenvector}")
     v = eigenvector[0] * v + eigenvector[1] * Pvc
     return v
 
@@ -445,7 +445,6 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
 
     # Case 2: Tow-Level Method
     if n == 1:
-        print("two level method ")
         Ac = coarse_matrix_storage[0]
         Mc = coarse_diagonal_matrix_storage[0]
         Ap = A_p_storage[0]
@@ -477,13 +476,11 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
     # print("multiple-level method")
 
     # gradient descent update
-    '''''''''
-    for i in range (n):
+    for i in range(n):
         Ac = coarse_matrix_storage[i]
         Mc = coarse_diagonal_matrix_storage[i]
         vc = coarse_vector_storage[i]
         coarse_vector_storage[i] = update_v(vc, Ac, Mc)
-    '''''''''
 
     # coarsest update
     Ac = coarse_matrix_storage[n - 1]
@@ -497,19 +494,20 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
 
     # Solve in the coarsest level return to the N-1 level
     coarse_v = solve_vc_coarst(Ac, Mc, Ap, Mp, temp_a, temp_m, P, vc)
+    coarse_vector_storage[n - 2] = coarse_v
 
     # return info upward
     for i in range(n - 3, -1, -1):
-
         # find weight for the next level
         temp_a = coarse_matrix_storage[i]
         temp_m = coarse_diagonal_matrix_storage[i]
-        temp = coarse_vector_storage[i+1]
-        P = P_info_storage[i+1]
+        temp = coarse_vector_storage[i + 1]
+        P = P_info_storage[i + 1]
         vc = coarse_vector_storage[i]
 
         coarse_v = np.dot(P, temp)
 
+        # Solve the weights in the current level
         vc = update_v_multi_initial(temp_a, temp_m, vc, coarse_v)
         coarse_vector_storage[i] = vc
 
@@ -523,11 +521,11 @@ def update_v_coarse_multi2(v, A, M, coarse_matrix_storage, coarse_diagonal_matri
 
 ##########################################################
 # gram_schmidt to generate a set of orthonormal vectors
-def gram_schmidt(A, M):
+def gram_schmidt(A, M, p):
     (n, m) = A.shape
-    W = np.zeros((n, m))
+    W = np.zeros((n, p))
 
-    for i in range(m):
+    for i in range(p):
 
         q = A[:, i]  # i-th column of A
 
@@ -578,6 +576,7 @@ def check_if_orthonormal(W, M):
 
 
 ##############################################################
+
 # A, M = set_up.make_graph()
 total_size = 1000
 adj, A, M = set_up.make_graph_2(total_size)
@@ -585,9 +584,10 @@ correct_answer, smallest_eigenvector = find_eigen(A, M)
 print(f"correct_answer is : {correct_answer}")
 # correct_answer = 0.0004810690277549212
 
-nc = [400,200,10,2]
+nc = [200,10]
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, A_p_storage, M_p_storage = generate_coarse_graph(
     nc, adj, A, M)
+
 print(nc)
 # generate random initial vector v
 np.random.seed(50)
@@ -599,7 +599,7 @@ v = np.random.rand(A.shape[0])
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 40
+MAXINTERATION = 30
 
 while tolerance > 1e-7 and iteration < MAXINTERATION:
     # v, sigma, v_old = update_v_LOPCG(A, M, v, v_old, sigma)
