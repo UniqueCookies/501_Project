@@ -35,110 +35,6 @@ def update_v(v, A, M):
     return v
 
 
-# Setup Av and Mv for the LOPCG method
-def a_bar(v, r_bar, v_old, A):
-    if (np.all(v_old == 0)):
-        test = np.zeros((2, 2))
-    else:
-        test = np.zeros((3, 3))
-
-        # 3x3 portion
-        vAv_old = np.dot(v, np.dot(A, v_old))
-        test[0][2] = vAv_old
-        test[2][0] = vAv_old
-
-        rAv_old = np.dot(r_bar, np.dot(A, v_old))
-        test[1][2] = rAv_old
-        test[2][1] = rAv_old
-
-        v_oldAv_old = np.dot(v_old, np.dot(A, v_old))
-        test[2][2] = v_oldAv_old
-
-    vAv = np.dot(v, np.dot(A, v))
-    test[0][0] = vAv
-    rAr = np.dot(r_bar, np.dot(A, r_bar))
-    test[1][1] = rAr
-
-    vAr = np.dot(v, np.dot(A, r_bar))
-    test[0][1] = vAr
-    test[1][0] = vAr
-
-    # check positive definiteness
-    if not check_positive(test):
-        print("Error: Av or Mv is not positive definite")
-    return test
-
-
-# LOPCG method in replace of coordinate descent
-def update_v_LOPCG(A, M, v, v_old, sigma):
-    # for preconditioner: right now just identity matrix
-    I = np.eye(A.shape[0])
-
-    # create r_bar
-    if sigma == 0:
-        sigma = np.dot(v, np.dot(A, v)) / np.dot(v, np.dot(M, v))
-    r = np.dot(A, v) - sigma * np.dot(M, v)
-    r_bar = np.dot(I, r)
-
-    # generate Av, Mv
-    a_test = a_bar(v, r_bar, v_old, A)
-    m_test = a_bar(v, r_bar, v_old, M)
-
-    # find eigenvalue and eigenvector
-    min_eigenvalue, min_eigenvector = find_eigen(a_test, m_test)
-
-    sigma = min_eigenvalue
-    alpha = min_eigenvector[0]
-    beta = min_eigenvector[1]
-    if (np.all(v_old == 0)):
-        gamma = 0
-    else:
-        gamma = min_eigenvector[2]
-
-    y = beta * r_bar + gamma * v_old
-    v_old = v
-    v = v + 1 / alpha * y
-
-    # normalize
-    norm = np.dot(v, np.dot(M, v))
-    norm = math.sqrt(norm)
-    v = v / norm
-
-    return v, sigma, v_old
-
-
-# setup Av and Mv for multiple eigenvalues
-def a_multi(A, X, W):
-    p = X.shape[1]
-    a_test = np.zeros((2 * p, 2 * p))
-
-    Ax = np.dot(A, X)
-    Aw = np.dot(A, W)
-    xAx = np.dot(X.T, Ax)
-    a_test[:p, :p] = xAx
-
-    xAw = np.dot(X.T, Aw)
-    wAx = xAw.T
-    a_test[:p, p:] = xAw
-    a_test[p:, :p] = wAx
-
-    wAw = np.dot(W.T, Aw)
-    a_test[p:, p:] = wAw
-
-    return a_test
-
-
-def update_v_multiple_eigenvalues(A, M, X, W):
-    Av = a_multi(A, X, W)
-    Mv = a_multi(M, X, W)
-    check_positive(Av)
-    check_positive(Mv)
-
-    # eigenvalues, eigenvectors = sp.linalg.eigh(Av, Mv)
-
-    # return eigenvalues,eigenvectors
-
-
 ###########################################################################
 # find eigenvalues,vectors for the coarsest level
 def find_eigen(A, M):
@@ -340,21 +236,26 @@ def solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current,size):
     n = len(P_current)
     if n==size:        #Direct Solve
         _, eigenvector = find_eigen(Acv, Mcv)
-        alpha = eigenvector[0]
-        beta = eigenvector[1:]
-        vc = (1/alpha) * beta
-
     else:                           #Coordinate Descent
+        eigenvector = update_v(vc, Acv, Mcv)
 
-        vc = update_v(vc, Acv, Mcv)
-        alpha = vc[0]
-        beta = vc[1:]
-        vc = 1/alpha * beta
+    alpha = eigenvector[0]
+    beta = eigenvector[1:]
+    vc = (1 / alpha) * beta
 
-    top = np.dot(vc, np.dot(Ac, vc))
-    bottom = np.dot(vc, np.dot(Mc, vc))
+
+    temp, _ = find_eigen(Acv, Mcv) ############
+
+    t1 = eigenvector
+
+
+    top = np.dot(t1, np.dot(Acv, t1))
+    bottom = np.dot(t1, np.dot(Mcv, t1))
     sigma = top / bottom
-    print(f"sigma from level {n} is {sigma}")
+
+    error = abs(temp-sigma)/sigma *100
+
+    print(f"sigma from level {n} is {sigma} but should be {temp} with error {error}%")
 
     for i in range (n-1,-1,-1):
         P = P_current[i]
@@ -390,7 +291,7 @@ def method (coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storag
 ##############################################################
 
 # A, M = set_up.make_graph()
-total_size = 3000
+total_size = 5000
 adj, A, M = set_up.make_graph_2(total_size)
 correct_answer, smallest_eigenvector = find_eigen(A, M)
 print(f"correct_answer is : {correct_answer}")
@@ -398,7 +299,7 @@ print(f"correct_answer is : {correct_answer}")
 #10000
 #correct_answer = 3.272583307180702e-05
 
-nc = [20]
+nc = [500,50,5]
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = generate_coarse_graph(
     nc, adj, A, M)
 
@@ -410,27 +311,39 @@ v = np.random.rand(A.shape[0])
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 100
+MAXINTERATION = 1000
+old = 1000
 
-while tolerance > 1e-7 and iteration < MAXINTERATION:
+while tolerance > 1e-8 and iteration < MAXINTERATION:
     v = update_v(v, A, M)
     top = np.dot(v, np.dot(A, v))
     bottom = np.dot(v, np.dot(M, v))
-    sigma = top / bottom
-    print(f"sigma from fine is {sigma}")
+    sigma_fine = top / bottom
+    print(f"sigma from fine is {sigma_fine}")
+
+    difference = abs(sigma_fine - old) / old * 100
+    print(f"Decrease in eigenvalue by fine level is {difference}%")
 
     v= method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage,v,A,M)
     top = np.dot(v, np.dot(A, v))
     bottom = np.dot(v, np.dot(M, v))
     sigma = top / bottom
 
-    tolerance = abs(sigma - correct_answer)
+    top = np.dot(v, np.dot(A, v))
+    bottom = np.dot(v, np.dot(M, v))
+    sigma = top / bottom
+    print(f"sigma after coarse update is {sigma}")
+
+    difference = (sigma_fine-sigma)/sigma_fine * 100
+    print(f"Decrease in eigenvalue by coarse level is {difference}%")
+
+    tolerance = abs(sigma - old)
+    old = sigma
     iteration +=1
+error = abs(sigma - correct_answer)/correct_answer *100
+print(f"The predicted eigenvalue is {sigma} with iteration {iteration} and error {error}%")
 
-print(f"The predicted eigenvalue is {sigma} with iteration {iteration}")
-
-for i in range (len(nc)):
-    Ac = coarse_matrix_storage[i]
-    Mc = coarse_diagonal_matrix_storage[i]
-    eigenvalue,_ =find_eigen(A, M)
-    print(f"Eigenvalue of level {i} is actually {eigenvalue}")
+left = np.dot(A,v)
+right = sigma * np.dot (M,v)
+error_prediced_eigenvalue = np.linalg.norm(left - right)
+print(f"Difference of the norm between Av and lMv{error_prediced_eigenvalue}")

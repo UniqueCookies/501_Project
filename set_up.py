@@ -61,7 +61,7 @@ def make_graph():
 
 def make_graph_2(n):
     # Create a random connected graph (adjust parameters as needed)
-    G = connected_watts_strogatz_graph(n, 4, 0.2, seed=42)
+    G = connected_watts_strogatz_graph(n, n//(n//2), 0.2, seed=42)
 
     # Convert the NetworkX graph to an adjacency matrix
     adjacency_matrix = nx.to_numpy_array(G)
