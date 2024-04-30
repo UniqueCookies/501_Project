@@ -5,6 +5,7 @@ import random
 import scipy as sp
 
 import set_up
+from multi import generate_coarse_graph
 
 
 # Initialize eigenvector Guesses, Return X or False
@@ -25,7 +26,7 @@ def generate_initial_vectors(n, p, M):
             X[:, i] = np.random.rand(n)
             iteration += 1
     if np.linalg.matrix_rank(X) == p:
-        X = gram_schmidt(X, M,0)
+        X = gram_schmidt(X, M, 0)
         return X
     else:
         print("Error: Unable to generate linearly independent vectors")
@@ -36,7 +37,7 @@ def generate_initial_vectors(n, p, M):
 def gram_schmidt(X, M, start):
     n = X.shape[1]  # number of vectors
 
-    for i in range(start,n):
+    for i in range(start, n):
         v_current = X[:, i]
         u_current = v_current
         for j in range(i):
@@ -56,43 +57,45 @@ def gram_schmidt(X, M, start):
 
 
 # Generate Basis
-def generate_basis_V(n, p, X,M):
-    W = np.random.randn(n, p)
+def generate_basis_V(p, X, M, p_matrix):
+    n = p_matrix.shape[1]
+    w = np.random.randn(n, p)
+    W = p_matrix @ w
     V_main = np.hstack((X, W))
 
     start = X.shape[1]
 
-    #V, _ = np.linalg.qr(V_main)
+    # V, _ = np.linalg.qr(V_main)
     V = gram_schmidt(V_main, M, start)
-    W = V[:,start:]
-    #k = np.linalg.matrix_rank(V)
-    return W,X
+    W = V[:, start:]
+    # k = np.linalg.matrix_rank(V)
+    return W, X, w
 
-def form_matrix (X,W,A):
+
+def form_matrix(X, W, A, coarse_a, w):
     xax = X.T @ A @ X
     xaw = X.T @ A @ W
     wax = xaw.T
-    waw = W.T @ A @ W
+    waw = w.T @ coarse_a @ w
 
-    matrix1 = np.hstack((xax,xaw))
-    matrix2 = np.hstack((wax,waw))
+    matrix1 = np.hstack((xax, xaw))
+    matrix2 = np.hstack((wax, waw))
 
-    matrix = np.vstack((matrix1,matrix2))
+    matrix = np.vstack((matrix1, matrix2))
     return matrix
 
 
 # Completely Solve 2p number of eigenvectors in V.TAV x = l V.TMV x, return actual 2p of eigenvectors of A
-def solve_eigen(A, M, p, X):
+def solve_eigen(A, M, p, X, p_matrix, coarse_a, coarse_m):
     m, n = A.shape
-    W,X = generate_basis_V(n, p, X,M)
-
-    A_new = form_matrix (X,W,A)
-    M_new = form_matrix (X,W,M)
-
+    W, X, w = generate_basis_V(p, X, M, p_matrix)
+    A_new = form_matrix(X, W, A, coarse_a, w)
+    M_new = form_matrix(X, W, M, coarse_m, w)
     _, eigenvectors = sp.linalg.eig(A_new, M_new)  # return normalized eigenvectors
-
-    alpha = eigenvectors[:p,:]
-    beta = eigenvectors[p:,:]
+    print(f"eigenvector dimension is {eigenvectors.shape}")
+    alpha = eigenvectors[:p, :]
+    beta = eigenvectors[p:, :]
+    print(X.shape)
     X = X @ alpha + W @ beta
 
     return X
@@ -119,38 +122,42 @@ def pick_column(X, indices, p):
     return X
 
 
-total_size = 100
-p = 5
-adj, A, M = set_up.make_graph_2(total_size)
+def generate_coarse(coarse_a, coarse_m, p_matrix, p):
+    _, eigenvectors = sp.sparse.linalg.eigsh(coarse_a, k=p, M=coarse_m, which='LM')
+    sorted_indices, eigenvalues = find_eigenvalue(eigenvectors, coarse_a, coarse_m)
+    v_calc = np.sort(eigenvalues)
+    w = pick_column(eigenvectors, sorted_indices, p)
+    W = p_matrix @ w
+    return w, W
 
 
-# Actual Answer
-eigenvalues, eigenvectors = sp.linalg.eig(A, M)
-v = np.sort(eigenvalues)
-print(v[:p])
-
+###################################################################################
 
 # Working basic calculations
-def basic_calculation(total_size, p, A, M):
+def basic_calculation(total_size, p, A, M, p_matrix, coarse_a, coarse_m):
     X = generate_initial_vectors(total_size, p, M)
     iteration = 0
     error = 10
     v_p_old = 10
-    while iteration < 10000 and error > 10 ** -10:
-        X = solve_eigen(A, M, p, X)
+
+    w, W = generate_coarse(coarse_a, coarse_m, p_matrix, p)
+    V = gram_schmidt(X, M, p)
+    A_new = form_matrix(V, W, A, coarse_a, w)
+    M_new = form_matrix(V, W, M, coarse_m, w)
+    _, eigenvectors = sp.linalg.eig(A_new, M_new)  # return normalized eigenvectors
+    alpha = eigenvectors[:p, :]
+    beta = eigenvectors[p:, :]
+    X = X @ alpha + W @ beta
+
+    while iteration < 1000 and error > 10 ** -10:
+        X = solve_eigen(A, M, p, X, p_matrix, coarse_a, coarse_m)
         sorted_indices, eigenvalues = find_eigenvalue(X, A, M)
         v_calc = np.sort(eigenvalues)
         X = pick_column(X, sorted_indices, p)
-
         v_new = v_calc[p - 1]
         error = abs(v_p_old - v_new)
         v_p_old = v_new
         iteration += 1
+
     print(eigenvalues[:p])
     print(f"Number of Iteration is {iteration}")
-
-
-basic_calculation(total_size, p, A, M)
-
-
-
