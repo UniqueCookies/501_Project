@@ -19,7 +19,7 @@ def make_graph(n, k, p, tries, seed):
     diag = adjacency_matrix.sum(axis=0)
 
     # Calculate the degree matrix
-    M = sp.sparse.diags(diag)
+    M = sp.sparse.diags(diag,format='csr')
 
     # Calculate the Laplacian matrix
     laplacian_matrix = M - adjacency_matrix
@@ -42,7 +42,6 @@ def make_graph(n, k, p, tries, seed):
 def adj_to_list(adjacency_matrix):
     lil_format = sp.sparse.lil_matrix(adjacency_matrix)
     adjacency_list = [np.array(x) for x in lil_format.rows]
-
     return adjacency_list
 
 

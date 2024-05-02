@@ -4,12 +4,14 @@ import numpy as np
 import scipy as sp
 import pymetis
 
+import set_up
+
 
 # Set up for the coordinate descent method
 # create 2x2 matrix for each column of A and M
 def a_test(v, i, A):
-    A = sp.sparse.csr_matrix(A)
     vAv = v.T @ A @ v
+
     col = A.getcol(i)
     va1 = v.T @ col
 
@@ -68,8 +70,7 @@ def generate_adjacency(graph_laplacian):
     diag_value = graph_laplacian.diagonal()
     degree_matrix = sp.sparse.diags(diag_value, format='csr')
     adjacency_matrix = degree_matrix - graph_laplacian
-    G = nx.from_scipy_sparse_array(adjacency_matrix)
-    adjacency_list = nx.to_dict_of_lists(G)
+    adjacency_list = set_up.adj_to_list(adjacency_matrix)
     return adjacency_list, degree_matrix
 
 
@@ -97,13 +98,15 @@ def generate_coarse_graph(nc, adj, A, M):
         p_info_storage.append(p)
 
         ac = p.T @ (ac @ p)
+        ac = sp.sparse.csr_matrix(ac)
         coarse_matrix_storage.append(ac)
         adj, degree_matrix = generate_adjacency(ac)  # create correct format of adjacency matrix for graph
 
         mc = p.T @ (mc @ p)
+        mc = sp.sparse.csr_matrix(mc)
         coarse_diagonal_matrix_storage.append(mc)
 
-        v = np.random.rand(ac.shape[0]+1)
+        v = np.random.rand(ac.shape[0] + 1)
         coarse_vector_storage.append(v)
 
     return coarse_matrix_storage, coarse_diagonal_matrix_storage, p_info_storage, coarse_vector_storage
@@ -130,47 +133,84 @@ def a_coarse(Ac, v, A, P_current):
     n = Ac.shape[0]
     test = np.zeros((n + 1, n + 1))
 
-    Av = A @v
+    Av = A @ v
     temp = Av
     for p in P_current:
         temp = p.T @ temp
 
     test[0][0] = v.T @ Av
-    test[0][1:] = temp.T
-    test[1:, 0] = temp
+    test[0,1:] = temp.T
+    test[1:,0] = test[0,1:].T
     Ac = Ac.toarray()
-    test[1:, 1:] = Ac
+    test[1:,1:] = Ac
     return test
 
 
-def solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size):
-    Acv = a_coarse(Ac, v, A, P_current)
-    Mcv = a_coarse(Mc, v, M, P_current)
+def update_vc_coarse_level_new(Ac, v, vc, A, P_current, i):
+    upper = v.T @ A @ v
+    right = v.T @ A
+    for p in P_current:
+        right = right @ p
 
+    vAv = vc[0] ** 2 * upper
+    temp = np.dot(right,vc[1:])
+    v0rightv = vc[0] * temp
+    vAcv = vc[1:].T @ Ac @ vc[1:]
+    top_left = vAv + 2 * v0rightv + vAcv
+
+    Acv_i = np.zeros((2, 2))
+    Acv_i[0, 0] = top_left
+
+    if i == 0:
+        Acv_i[0, 1] = temp + vc[0] * upper
+        Acv_i[1, 0] = Acv_i[0, 1]
+        Acv_i[1, 1] = upper
+    else:
+        Acv_i[1, 1] = Ac[i - 1, i - 1]
+        col = Ac.getcol(i - 1)
+        left = right[i - 1] * vc[0]
+        right = vc[1:].T @ col
+        Acv_i[0, 1] = left + right
+        Acv_i[1, 0] = Acv_i[0, 1]
+
+    return Acv_i
+
+
+def update_v_coarse(Ac, Mc, v, vc, A, M, P_current):
+    for i in range(vc.size):
+        test_a = update_vc_coarse_level_new(Ac, v, vc, A, P_current, i)
+        test_m = update_vc_coarse_level_new(Mc, v, vc, M, P_current, i)
+        _, min_eigenvector = sp.linalg.eigh(test_a, test_m, subset_by_index=[0, 0])
+        t = min_eigenvector[1] / min_eigenvector[0]
+        vc[i] += t
+    return vc
+
+
+def solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size):
     n = len(P_current)
     if n == size:  # Direct Solve
+        Acv = a_coarse(Ac, v, A, P_current)
+        Mcv = a_coarse(Mc, v, M, P_current)
         _, eigenvector = find_eigen(Acv, Mcv)
     else:  # Coordinate Descent
-        eigenvector = update_v(vc, Acv, Mcv)
+        eigenvector = update_v_coarse(Ac, Mc, v, vc, A, M, P_current)
 
     alpha = eigenvector[0]
     beta = eigenvector[1:]
     vc = (1 / alpha) * beta
 
-    temp, _ = find_eigen(Acv, Mcv)  ############
-
     for i in range(n - 1, -1, -1):
         P = P_current[i]
         vc = P @ vc
 
+    v = v.reshape(v.size)
     v = v + vc
-
     norm = v.T @ M @ v
 
     norm = math.sqrt(norm)
     v = v / norm
 
-    return v
+    return v,eigenvector
 
 
 def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, v, A, M):
@@ -184,13 +224,15 @@ def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage
         vc = coarse_vector_storage[0]
         P_current = P_info_storage
         v = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+
     if size > 1:
         for i in range(size - 1, -1, -1):
             Ac = coarse_matrix_storage[i]
             Mc = coarse_diagonal_matrix_storage[i]
             vc = coarse_vector_storage[i]
             P_current = P_info_storage[:i + 1]
-            v = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+            v,vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+            coarse_vector_storage[i]=vc
 
     return v
 ##############################################################

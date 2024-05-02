@@ -8,9 +8,10 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-total_size = 700
-k = 2
-G, adj, A, M = set_up.make_graph(total_size,k,0.2,10,10)
+total_size = 10000
+nc = [5000,1000]
+k = 10
+G, adj, A, M = set_up.make_graph(total_size,k,0.2,10,30)
 print(G)
 
 
@@ -29,7 +30,7 @@ right = correct_answer * (M @ smallest_eigenvector)
 print(f"The norm of error Av = \lambda Mv is: {np.linalg.norm(left-right)}")
 
 
-nc = [100,10]
+
 
 start_time = time.time()
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = multi.generate_coarse_graph(
@@ -41,23 +42,22 @@ print("Elapsed time for creating necessary coarse matrix is :", elapsed_time, "s
 for num in P_info_storage:
     print(num.shape)
 
-np.random.seed(5)
-v = np.random.rand(A.shape[0])
-
-
 
 tolerance = 1000
 iteration = 0
-MAXINTERATION = 1000
+MAXINTERATION = 100
 old = 1000
 
 start_time = time.time()
-while tolerance > 1e-8 and iteration < MAXINTERATION:
+while tolerance > 1e-10 and iteration < MAXINTERATION:
     v = multi.update_v(v, A, M)
     v= multi.method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage,v,A,M)
     top = v.T @ A @ v
     bottom = v.T @ M @ v
     sigma = top / bottom
+
+    if iteration%10 ==0:
+        print(f"The eigenvalue at {iteration} is {sigma}")
 
     tolerance = abs(sigma - old)
     old = sigma
