@@ -143,6 +143,10 @@ def a_coarse(Ac, v, A, P_current):
     test[1:,0] = test[0,1:].T
     Ac = Ac.toarray()
     test[1:,1:] = Ac
+
+
+    inverse = np.linalg.inv(Ac)
+    right = test[0,1:] @ (inverse @ test[1:,0])
     return test
 
 
@@ -151,13 +155,11 @@ def update_vc_coarse_level_new(Ac, v, vc, A, P_current, i):
     right = v.T @ A
     for p in P_current:
         right = right @ p
-
     vAv = vc[0] ** 2 * upper
     temp = np.dot(right,vc[1:])
     v0rightv = vc[0] * temp
     vAcv = vc[1:].T @ Ac @ vc[1:]
     top_left = vAv + 2 * v0rightv + vAcv
-
     Acv_i = np.zeros((2, 2))
     Acv_i[0, 0] = top_left
 
@@ -175,14 +177,32 @@ def update_vc_coarse_level_new(Ac, v, vc, A, P_current, i):
 
     return Acv_i
 
+def eigen_check(Ac, v, vc, A, P_current):
+    upper = v.T @ A @ v
+    right = v.T @ A
+    for p in P_current:
+        right = right @ p
+
+    vAv = vc[0] ** 2 * upper
+    temp = np.dot(right, vc[1:])
+    v0rightv = vc[0] * temp
+    vAcv = vc[1:].T @ Ac @ vc[1:]
+    top_left = vAv + 2 * v0rightv + vAcv
+    return top_left
 
 def update_v_coarse(Ac, Mc, v, vc, A, M, P_current):
     for i in range(vc.size):
         test_a = update_vc_coarse_level_new(Ac, v, vc, A, P_current, i)
         test_m = update_vc_coarse_level_new(Mc, v, vc, M, P_current, i)
         _, min_eigenvector = sp.linalg.eigh(test_a, test_m, subset_by_index=[0, 0])
+
         t = min_eigenvector[1] / min_eigenvector[0]
         vc[i] += t
+
+    top = eigen_check(Ac, v, vc, A, P_current)
+    bottom = eigen_check(Mc, v, vc, M, P_current)
+    sigma = top/bottom
+    print(f"The eigenvalue in coarse level {len(P_current)} is converging to {sigma}")
     return vc
 
 
@@ -191,6 +211,7 @@ def solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size):
     if n == size:  # Direct Solve
         Acv = a_coarse(Ac, v, A, P_current)
         Mcv = a_coarse(Mc, v, M, P_current)
+
         _, eigenvector = find_eigen(Acv, Mcv)
     else:  # Coordinate Descent
         eigenvector = update_v_coarse(Ac, Mc, v, vc, A, M, P_current)
@@ -223,7 +244,8 @@ def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage
         Mc = coarse_diagonal_matrix_storage[0]
         vc = coarse_vector_storage[0]
         P_current = P_info_storage
-        v = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+        v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+        coarse_vector_storage[0] = vc
 
     if size > 1:
         for i in range(size - 1, -1, -1):

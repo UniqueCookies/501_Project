@@ -64,3 +64,42 @@ def adj_to_nx_graph(adjacency_matrix):
                 G.add_edge(i, j)
 
     return G
+
+# Use file to create csr matrices
+def create_matrix(lines):
+    # Extract row, col, and edge value from each line
+    rows = []
+    cols = []
+    values = []
+
+    for line in lines:
+        row, col, value = map(float, line.strip().split())
+        rows.append(int(row))
+        cols.append(int(col))
+        values.append(value)
+
+    # Determine matrix dimensions
+    num_rows = max(rows) + 1
+    num_cols = max(cols) + 1
+
+    # Create CSR format arrays
+    data = np.array(values)
+    indices = np.array(cols)
+    indptr = np.zeros(num_rows + 1, dtype=int)
+
+    # Count non-zero elements per row
+    for row in rows:
+        indptr[row + 1] += 1
+
+    # Cumulative sum to obtain indptr
+    indptr = np.cumsum(indptr)
+
+    # Create CSR matrix
+    csr_matrix = sp.sparse.csr_matrix((data, indices, indptr), shape=(num_rows, num_cols))
+
+    return csr_matrix
+
+def create_diagonal(A):
+    diag = A.diagonal()
+    M = sp.sparse.diags(diag, format='csr')
+    return M
