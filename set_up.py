@@ -109,11 +109,11 @@ def create_adj_xadj(adjacency_list):
     adjncy = []
     xadj = [0]
     for adj in adjacency_list:
-
         for item in adj:
             adjncy.append(item)
         end = len(adjncy)
         xadj.append(end)
+
 
     adjncy_array = np.array(adjncy)
     xadj_array = np.array(xadj)

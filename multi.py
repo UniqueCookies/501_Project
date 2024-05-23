@@ -55,19 +55,22 @@ def find_eigen(A, M):
 # Generate P matrix using pymetis, making sure A fits the particular format for pymetis
 # Option: 0 - regular unweighted graph
         # 1 - create edge weights by computinng T- d_i d_j where T is the sum of all degrees
-def coarse_matrix(adjacency_list,A, nc,option):  #nc is the size of coarse matrix
-    if option ==1:
-        adjncy_array,xadj_array = set_up.create_adj_xadj(adjacency_list)
-        edge = set_up.create_edge_list(A)
-        print(f"Set up is done")
+def coarse_matrix(adjacency_list, coarse, coarse_size,weights,edge_list):  #nc is the size of coarse matrix
+    if weights:
+        print("Weight partition is performed here")
+        temp, _ = generate_adjacency(coarse)
+        if len(edge_list)==0:
+            edge_list = np.asarray(temp.data, dtype=int)
         try:
-            _, partition_info = pymetis.part_graph(nc, adjncy=adjncy_array,xadj=xadj_array,eweights=edge)
+            _, partition_info = pymetis.part_graph(coarse_size, adjncy=temp.indices,xadj=temp.indptr,eweights=edge_list)
         except Exception as e:
             print(f"error is {e}")
     else:
-        _, partition_info = pymetis.part_graph(nc, adjacency=adjacency_list)
+        print("No weight partition is performed here ")
+        _, partition_info = pymetis.part_graph(coarse_size, adjacency=adjacency_list)
+
     P = []
-    for i in range(nc):
+    for i in range(coarse_size):
         flipped_array = [1 if val == i else 0 for val in partition_info]
         if len(P) == 0:
             P = np.array(flipped_array)
@@ -81,12 +84,11 @@ def generate_adjacency(graph_laplacian):
     diag_value = graph_laplacian.diagonal()
     degree_matrix = sp.sparse.diags(diag_value, format='csr')
     adjacency_matrix = degree_matrix - graph_laplacian
-    adjacency_list = set_up.adj_to_list(adjacency_matrix)
-    return adjacency_list, degree_matrix
+    return adjacency_matrix, degree_matrix
 
 
 # Generate a list of coarse matrix A,M, and a list of P matrix
-def generate_coarse_graph(nc, adj, A, M,option):
+def generate_coarse_graph(nc, adj, A, M,weights):
     if len(nc) == 0:
         return None, None, None, None
 
@@ -103,16 +105,22 @@ def generate_coarse_graph(nc, adj, A, M,option):
 
     for i in range(len(nc)):
         # Update P matrix
-        p = coarse_matrix(adj,A, nc[i],option)
+        coarse_size = nc[i]
+        if i==0:
+            edge_list = set_up.create_edge_list(ac)
+        else:
+            edge_list = []
+        p = coarse_matrix(adj, ac, coarse_size,weights,edge_list)
         p = update_coarse_p(p, nc, i)
         p = sp.sparse.csr_matrix(p)  # make sure it is sparse format
 
         p_info_storage.append(p)
-
         ac = p.T @ (ac @ p)
+
         ac = sp.sparse.csr_matrix(ac)
         coarse_matrix_storage.append(ac)
-        adj, degree_matrix = generate_adjacency(ac)  # create correct format of adjacency matrix for graph
+        adjacency, degree_matrix = generate_adjacency(ac)  # create correct format of adjacency matrix for graph
+        adj = set_up.adj_to_list(adjacency)
 
         mc = p.T @ (mc @ p)
         mc = sp.sparse.csr_matrix(mc)
@@ -308,7 +316,15 @@ def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage
         coarse_vector_storage[0] = vc
 
     if size > 1:
-        if option ==0:
+        if option is False:
+            i = size-1
+            Ac = coarse_matrix_storage[i]
+            Mc = coarse_diagonal_matrix_storage[i]
+            vc = coarse_vector_storage[i]
+            P_current = P_info_storage[:i + 1]
+            v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+            coarse_vector_storage[i] = vc
+        else:
             for i in range(size - 1, -1, -1):
                 Ac = coarse_matrix_storage[i]
                 Mc = coarse_diagonal_matrix_storage[i]
@@ -316,13 +332,6 @@ def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage
                 P_current = P_info_storage[:i + 1]
                 v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
                 coarse_vector_storage[i] = vc
-        else:
-            i = len(coarse_matrix_storage)-1
-            Ac = coarse_matrix_storage[i]
-            Mc = coarse_diagonal_matrix_storage[i]
-            vc = coarse_vector_storage[i]
-            P_current = P_info_storage[:i + 1]
-            v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
-            coarse_vector_storage[i] = vc
+
     return v
 ##############################################################

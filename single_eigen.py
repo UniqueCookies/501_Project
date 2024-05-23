@@ -10,6 +10,8 @@ import pandas as pd
 
 MAXINTERATION = 300
 epsilon = 1e-6
+#nc = [1346,382,139,4]
+option = True
 
 '''''''''
 facebook = pd.read_csv('facebook_combined.txt',
@@ -26,7 +28,7 @@ nx.draw_networkx(G,pos = pos, ax= ax, node_size = 10 ,with_labels=False)
 plt.show()
 '''''''''
 
-
+'''''''''''
 # Import graph
 with open('facebook_combined.txt', 'r') as file:
     lines = file.readlines()
@@ -59,7 +61,9 @@ diag = A.diagonal()
 M = sp.sparse.csr_matrix((diag, [np.arange(len(diag)), np.arange(len(diag))]), shape=(A.shape[0], A.shape[1]))
 A = -A+2*M
 adj = set_up.adj_to_list(A)
-nc = [1010,251, 62]
+'''''''''''
+
+
 
 ##################################################
 '''''''''''
@@ -78,7 +82,7 @@ nx.draw_networkx(G,pos = pos, ax= ax, node_size = 10 ,with_labels=False)
 plt.show()
 
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = multi.generate_coarse_graph(
-    nc, adj, A, M,1)
+    nc, adj, A, M,weights=option)
 
 for coarse_A in coarse_matrix_storage:
     diag = coarse_A.diagonal()
@@ -92,8 +96,8 @@ for coarse_A in coarse_matrix_storage:
     ax.axis("off")
     nx.draw_networkx(G, pos=pos, ax=ax, node_size=10, with_labels=False)
     plt.show()
-'''''''''''
 
+'''''''''''
 ##################################################
 # Code for result 1
 '''''''''''
@@ -168,21 +172,20 @@ for i in range (len(coarse_matrix_storage)):
 '''''''''''
 ###################################################################
 
-'''''''''''
+
 # Create Random Graph using networkx
 
-total_size = 500
-nc = [100, 10]
-k = 10
+total_size = 5000
+nc = [1000,200,40]
+k = 500
 print(f"Neigher nodes are {k},so each node is {k/total_size*100}% with other nodes")
 G, adj, A, M = set_up.make_graph(total_size,k,0.2,10,30)
 print(G)
 
-'''''''''''
 
 
 v = np.random.rand(A.shape[0],1)
-'''''''''''
+
 # Using LOBPCG to Solve for eigenvalues
 
 start_time = time.time()
@@ -195,22 +198,54 @@ left = A @ smallest_eigenvector
 right = correct_answer * (M @ smallest_eigenvector)
 print(f"Correct_answer by lobpcg method is : {correct_answer} with the norm of the residual error : {np.linalg.norm(left - right)}")
 
-'''''''''''
+
+### Graph it
+
+A_display = A
+diag = A.diagonal()
+D = sp.sparse.diags(diag)
+A_display = D- A
+G = nx.from_scipy_sparse_array(A_display)
+print(G)
+
+pos = nx.spring_layout(G,iterations=15,seed=1721)
+fig,ax = plt.subplots(figsize=(15,9))
+ax.axis("off")
+nx.draw_networkx(G,pos = pos, ax= ax, node_size = 10 ,with_labels=False)
+plt.show()
+
+
 start_time = time.time()
+
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = multi.generate_coarse_graph(
-    nc, adj, A, M,1)
+    nc, adj, A, M, weights=True)
 
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 print("Elapsed time for creating necessary coarse matrix is :", elapsed_time, "seconds")
-
 if P_info_storage is not None:
     for num in P_info_storage:
         print(num.shape)
 
+for coarse_A in coarse_matrix_storage:
+    diag = coarse_A.diagonal()
+    D = sp.sparse.diags(diag)
+    A_display = D - coarse_A
+    G = nx.from_scipy_sparse_array(A_display)
+    print(f"The coarse matrix {coarse_A.shape} has the graph of {G}")
 
-'''''''''''
+    pos = nx.spring_layout(G, iterations=15, seed=1721)
+    fig, ax = plt.subplots(figsize=(15, 9))
+    ax.axis("off")
+    nx.draw_networkx(G, pos=pos, ax=ax, node_size=10, with_labels=False)
+    plt.show()
+
+
+
+
+
+
 
 
 tolerance = 10
@@ -234,7 +269,7 @@ while tolerance > epsilon * previous and (iteration < MAXINTERATION or iteration
 
 
     v = multi.method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, v, A,
-                    M,0)
+                    M,option=True)
 
     top = v.T @ A @ v
     bottom = v.T @ M @ v
@@ -288,7 +323,7 @@ while tolerance > epsilon * previous and (iteration < MAXINTERATION or iteration
 
 
     v = multi.method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, v, A,
-                    M,1)
+                    M,option=False)
 
     top = v.T @ A @ v
     bottom = v.T @ M @ v
@@ -316,4 +351,3 @@ left = A @ v
 right = sigma * (M @ v)
 residual_error = np.linalg.norm(left - right)
 print(f"The residual error is {residual_error}")
-'''''''''''

@@ -6,27 +6,31 @@ import time
 import scipy as sp
 import matplotlib.pyplot as plt
 import pymetis
+from scipy.sparse import coo_matrix
 MAXINTERATION = 50
 
 
 
 
 total_size = 1000
-k = 100
+k = 3
 print(f"Neigher nodes are {k},so each node is {k/total_size*100}% with other nodes")
 G, adj, A, M = set_up.make_graph(total_size,k,0.2,10,30)
-nc =[500,150,30]
+nc =[400,40,4]
 
+ac = A
+for i in range(len(nc)):
+    # Update P matrix
+    coarse_size = nc[i]
+    print(f"Ac shape before p is {ac.shape}")
+    p = multi.coarse_matrix(adj, ac, coarse_size, True)
+    p = multi.update_coarse_p(p, nc, i)
+    p = sp.sparse.csr_matrix(p)  # make sure it is sparse format
 
-adjncy_array, xadj_array = set_up.create_adj_xadj(adj)
-edge = set_up.create_edge_list(A)
-print(f"Set up is done")
-try:
-    _, partition_info = pymetis.part_graph(300, adjncy=adjncy_array, xadj=xadj_array, eweights=edge)
-except Exception as e:
-    print(f"error is {e}")
+    ac = p.T @ (ac @ p)
 
+    ac = sp.sparse.csr_matrix(ac)
 
-
-
-
+    adjacency, degree_matrix = multi.generate_adjacency(ac)  # create correct format of adjacency matrix for graph
+    adj = set_up.adj_to_list(adjacency)
+print(ac)
