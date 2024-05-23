@@ -3,7 +3,7 @@ import networkx as nx
 import numpy as np
 import scipy as sp
 import pymetis
-
+import random
 import set_up
 
 
@@ -53,8 +53,19 @@ def find_eigen(A, M):
 # Graph Partition Portion
 
 # Generate P matrix using pymetis, making sure A fits the particular format for pymetis
-def coarse_matrix(A, nc):  # A is the matrix, nc is the size of coarse matrix
-    _, partition_info = pymetis.part_graph(nc, adjacency=A)
+# Option: 0 - regular unweighted graph
+        # 1 - create edge weights by computinng T- d_i d_j where T is the sum of all degrees
+def coarse_matrix(adjacency_list,A, nc,option):  #nc is the size of coarse matrix
+    if option ==1:
+        adjncy_array,xadj_array = set_up.create_adj_xadj(adjacency_list)
+        edge = set_up.create_edge_list(A)
+        print(f"Set up is done")
+        try:
+            _, partition_info = pymetis.part_graph(nc, adjncy=adjncy_array,xadj=xadj_array,eweights=edge)
+        except Exception as e:
+            print(f"error is {e}")
+    else:
+        _, partition_info = pymetis.part_graph(nc, adjacency=adjacency_list)
     P = []
     for i in range(nc):
         flipped_array = [1 if val == i else 0 for val in partition_info]
@@ -75,7 +86,7 @@ def generate_adjacency(graph_laplacian):
 
 
 # Generate a list of coarse matrix A,M, and a list of P matrix
-def generate_coarse_graph(nc, adj, A, M):
+def generate_coarse_graph(nc, adj, A, M,option):
     if len(nc) == 0:
         return None, None, None, None
 
@@ -92,9 +103,10 @@ def generate_coarse_graph(nc, adj, A, M):
 
     for i in range(len(nc)):
         # Update P matrix
-        p = coarse_matrix(adj, nc[i])
+        p = coarse_matrix(adj,A, nc[i],option)
         p = update_coarse_p(p, nc, i)
         p = sp.sparse.csr_matrix(p)  # make sure it is sparse format
+
         p_info_storage.append(p)
 
         ac = p.T @ (ac @ p)
@@ -139,14 +151,11 @@ def a_coarse(Ac, v, A, P_current):
         temp = p.T @ temp
 
     test[0][0] = v.T @ Av
-    test[0,1:] = temp.T
-    test[1:,0] = test[0,1:].T
+    test[1:, 0] = temp.T
+    test[0, 1:] = test[1:, 0].T
     Ac = Ac.toarray()
-    test[1:,1:] = Ac
+    test[1:, 1:] = Ac
 
-
-    inverse = np.linalg.inv(Ac)
-    right = test[0,1:] @ (inverse @ test[1:,0])
     return test
 
 
@@ -156,7 +165,7 @@ def update_vc_coarse_level_new(Ac, v, vc, A, P_current, i):
     for p in P_current:
         right = right @ p
     vAv = vc[0] ** 2 * upper
-    temp = np.dot(right,vc[1:])
+    temp = np.dot(right, vc[1:])
     v0rightv = vc[0] * temp
     vAcv = vc[1:].T @ Ac @ vc[1:]
     top_left = vAv + 2 * v0rightv + vAcv
@@ -171,11 +180,12 @@ def update_vc_coarse_level_new(Ac, v, vc, A, P_current, i):
         Acv_i[1, 1] = Ac[i - 1, i - 1]
         col = Ac.getcol(i - 1)
         left = right[i - 1] * vc[0]
-        right = vc[1:].T @ col
-        Acv_i[0, 1] = left + right
+        temp = vc[1:].T @ col
+        Acv_i[0, 1] = left + temp
         Acv_i[1, 0] = Acv_i[0, 1]
 
     return Acv_i
+
 
 def eigen_check(Ac, v, vc, A, P_current):
     upper = v.T @ A @ v
@@ -190,51 +200,101 @@ def eigen_check(Ac, v, vc, A, P_current):
     top_left = vAv + 2 * v0rightv + vAcv
     return top_left
 
+
 def update_v_coarse(Ac, Mc, v, vc, A, M, P_current):
     for i in range(vc.size):
         test_a = update_vc_coarse_level_new(Ac, v, vc, A, P_current, i)
         test_m = update_vc_coarse_level_new(Mc, v, vc, M, P_current, i)
-        _, min_eigenvector = sp.linalg.eigh(test_a, test_m, subset_by_index=[0, 0])
+        try:
+            min_eigenvalue, min_eigenvector = sp.linalg.eigh(test_a, test_m, subset_by_index=[0, 0])
+            t = min_eigenvector[1] / min_eigenvector[0]
+            vc[i] += t
+        except Exception as e:
+            print(f"Error has occured at column {i} with error {e}")
+            print(
+                f"Determinant of matrix m is {np.linalg.det(test_m)} and the main diagonals are {test_m[0, 0]} and {test_m[1, 1]}"
+                f"with eigenvalue of {np.linalg.eig(test_m)} ")
+            print(
+                f"Determinant of matrix a is {np.linalg.det(test_a)} and the main diagonals are {test_a[0, 0]} and {test_a[1, 1]} "
+                f"with eigenvalue of {np.linalg.eig(test_a)}")
 
-        t = min_eigenvector[1] / min_eigenvector[0]
-        vc[i] += t
-
+    '''''''''
+    #Check whether coarse is converging:
     top = eigen_check(Ac, v, vc, A, P_current)
     bottom = eigen_check(Mc, v, vc, M, P_current)
     sigma = top/bottom
-    print(f"The eigenvalue in coarse level {len(P_current)} is converging to {sigma}")
+    #print(f"The eigenvalue in coarse level {len(P_current)} is converging to {sigma}")
+    '''''''''
     return vc
+
+
+def check_positve(matrix):
+    eigenvalues = np.linalg.eigvals(matrix)
+    # Check if all eigenvalues are positive
+    all_positive = np.all(eigenvalues > 0)
+    if not all_positive:
+        negative_eigenvalues = eigenvalues[eigenvalues <= 0]
+        print(f"Negative eigenvalues are {eigenvalues}")
+        return False
+    return True
+
+
+def eigenvalue_check(Ac, A, P_current, v):
+    n = Ac.shape[0]
+    top = v.T @ A @ v
+    top = top.item()
+
+    temp = A @ v
+    for p in P_current:
+        temp = p.T @ temp
+
+    matrix = np.zeros((n + 1, n + 1))
+    matrix[0, 0] = top
+    matrix[0, 1:] = temp.T
+    matrix[1:, 0] = matrix[0, 1:].T
+    matrix[1:, 1:] = Ac.toarray()
+    return matrix
 
 
 def solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size):
     n = len(P_current)
+
+    #Method 1
     if n == size:  # Direct Solve
         Acv = a_coarse(Ac, v, A, P_current)
         Mcv = a_coarse(Mc, v, M, P_current)
-
-        _, eigenvector = find_eigen(Acv, Mcv)
+        eigenvalue, eigenvector = find_eigen(Acv, Mcv)
     else:  # Coordinate Descent
         eigenvector = update_v_coarse(Ac, Mc, v, vc, A, M, P_current)
 
+    top = eigen_check(Ac, v, vc, A, P_current)
+    bottom = eigen_check(Mc, v, vc, M, P_current)
+    sigma = top / bottom
+
+
     alpha = eigenvector[0]
     beta = eigenvector[1:]
-    vc = (1 / alpha) * beta
+    vc = beta
+
+    print(
+        f"At coarse level {size - n}, eigenvalue is {sigma}, the norm of vc is {np.linalg.norm(vc)} with alpha value of {alpha}")
 
     for i in range(n - 1, -1, -1):
         P = P_current[i]
         vc = P @ vc
 
-    v = v.reshape(v.size)
-    v = v + vc
+    v = v.reshape(v.size)  # probably not necessary
+    v = alpha * v + vc
+    # v = v + 1/alpha*vc
     norm = v.T @ M @ v
 
     norm = math.sqrt(norm)
     v = v / norm
 
-    return v,eigenvector
+    return v, eigenvector
 
 
-def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, v, A, M):
+def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage, v, A, M,option):
     if not P_info_storage:
         return v
     size = len(P_info_storage)
@@ -248,13 +308,21 @@ def method(coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage
         coarse_vector_storage[0] = vc
 
     if size > 1:
-        for i in range(size - 1, -1, -1):
+        if option ==0:
+            for i in range(size - 1, -1, -1):
+                Ac = coarse_matrix_storage[i]
+                Mc = coarse_diagonal_matrix_storage[i]
+                vc = coarse_vector_storage[i]
+                P_current = P_info_storage[:i + 1]
+                v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+                coarse_vector_storage[i] = vc
+        else:
+            i = len(coarse_matrix_storage)-1
             Ac = coarse_matrix_storage[i]
             Mc = coarse_diagonal_matrix_storage[i]
             vc = coarse_vector_storage[i]
             P_current = P_info_storage[:i + 1]
-            v,vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
-            coarse_vector_storage[i]=vc
-
+            v, vc = solve_vc_coarst(Ac, Mc, A, M, v, vc, P_current, size)
+            coarse_vector_storage[i] = vc
     return v
 ##############################################################

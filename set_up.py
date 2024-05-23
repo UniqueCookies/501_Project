@@ -103,3 +103,36 @@ def create_diagonal(A):
     diag = A.diagonal()
     M = sp.sparse.diags(diag, format='csr')
     return M
+
+# Create adjncy and xadj when having edge weights
+def create_adj_xadj(adjacency_list):
+    adjncy = []
+    xadj = [0]
+    for adj in adjacency_list:
+
+        for item in adj:
+            adjncy.append(item)
+        end = len(adjncy)
+        xadj.append(end)
+
+    adjncy_array = np.array(adjncy)
+    xadj_array = np.array(xadj)
+
+    return adjncy_array, xadj_array
+
+
+# Create edge weights, input needs to be graph laplacian
+def create_edge_list (A):
+    diag = A.diagonal()
+    T = np.sum(diag)
+
+    edge_list = []
+    for row, col in zip(*A.nonzero()):
+        value = A[row, col]
+        if value == -1:
+            d_i = A[row, row]
+            d_j = A[col, col]
+            weight = int(T - d_i * d_j)
+            edge_list.append(weight)
+    edge_list = np.array(edge_list)
+    return edge_list
