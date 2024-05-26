@@ -3,16 +3,50 @@ import math
 import numpy as np
 import random
 import scipy as sp
-
+from scipy.linalg import eigh
 import set_up
 from multi import generate_coarse_graph
+
+
+# Form Coordinate Descent Matrix
+def coordinate_descent_matrix(X, i, A):
+    xax = X.T @ A @ X
+    aw = A.getcol(i)
+    xaw = X.T @ aw
+    n = X.shape[1]
+    matrix = np.zeros((n+1,n+1))
+    matrix[0:n,0:n] = xax
+    matrix[n,n] = A[i,i]
+    matrix[0:n,n:n+1] = xaw
+    matrix[n:n+1,0:n] = xaw.T
+    return matrix
+
+#Single Level Coordinate Descent
+def single_level_multi_eigen(A, X, M):
+    for i in range (A.shape[0]):
+        try:
+            W = np.zeros((A.shape[0],1))
+            W[i,0] = 1
+            A_new = coordinate_descent_matrix(X, i, A)
+            M_new = coordinate_descent_matrix(X, i, M)
+            num_of_eigenvalue = X.shape[1] #number of eigenvalue plan to solve
+            _, eigenvectors = eigh(A_new, M_new,[0,num_of_eigenvalue])  # return normalized eigenvectors
+            print(eigenvectors.shape)
+            alpha = eigenvectors[0, :]
+            beta = eigenvectors[1:, :]
+            X = X @ alpha + W @ beta
+        except Exception as error:
+            print(f"Error at stel {i} with error {error}")
+            print(M_new)
+            print(np.linalg.eig(M_new))
+
+    return X
 
 
 # Initialize eigenvector Guesses, Return X or False
 def generate_initial_vectors(n, p, M):
     # Initial Guess p number of eigenvectors
     X = np.zeros((n, p))
-
     for i in range(p):
         np.random.seed(i)
         X[:, i] = np.random.rand(n)
@@ -87,7 +121,7 @@ def form_matrix(X, W, A, coarse_a, w):
 
 # Completely Solve 2p number of eigenvectors in V.TAV x = l V.TMV x, return actual 2p of eigenvectors of A
 def solve_eigen(A, M, p, X, p_matrix, coarse_a, coarse_m):
-    m, n = A.shape
+
     W, X, w = generate_basis_V(p, X, M, p_matrix)
     A_new = form_matrix(X, W, A, coarse_a, w)
     M_new = form_matrix(X, W, M, coarse_m, w)
@@ -95,10 +129,11 @@ def solve_eigen(A, M, p, X, p_matrix, coarse_a, coarse_m):
     print(f"eigenvector dimension is {eigenvectors.shape}")
     alpha = eigenvectors[:p, :]
     beta = eigenvectors[p:, :]
-    print(X.shape)
     X = X @ alpha + W @ beta
 
     return X
+
+
 
 
 # Apply Rayleigh Quotient to find eigenvalues

@@ -11,7 +11,7 @@ import pandas as pd
 MAXINTERATION = 300
 epsilon = 1e-6
 #nc = [1346,382,139,4]
-option = True
+option = False
 
 '''''''''
 facebook = pd.read_csv('facebook_combined.txt',
@@ -185,7 +185,7 @@ print(G)
 
 
 v = np.random.rand(A.shape[0],1)
-
+'''''''''
 # Using LOBPCG to Solve for eigenvalues
 
 start_time = time.time()
@@ -214,11 +214,11 @@ ax.axis("off")
 nx.draw_networkx(G,pos = pos, ax= ax, node_size = 10 ,with_labels=False)
 plt.show()
 
-
+'''''''''
 start_time = time.time()
 
 coarse_matrix_storage, coarse_diagonal_matrix_storage, P_info_storage, coarse_vector_storage = multi.generate_coarse_graph(
-    nc, adj, A, M, weights=True)
+    nc, adj, A, M, weights=option)
 
 
 end_time = time.time()
@@ -227,7 +227,7 @@ print("Elapsed time for creating necessary coarse matrix is :", elapsed_time, "s
 if P_info_storage is not None:
     for num in P_info_storage:
         print(num.shape)
-
+'''''''''
 for coarse_A in coarse_matrix_storage:
     diag = coarse_A.diagonal()
     D = sp.sparse.diags(diag)
@@ -240,7 +240,7 @@ for coarse_A in coarse_matrix_storage:
     ax.axis("off")
     nx.draw_networkx(G, pos=pos, ax=ax, node_size=10, with_labels=False)
     plt.show()
-
+'''''''''
 
 
 
@@ -299,6 +299,7 @@ residual_error = np.linalg.norm(left - right)
 print(f"The residual error is {residual_error}")
 
 ##########################################################################
+'''''''''
 # Only the Coarses:
 
 v = np.random.rand(A.shape[0],1)
@@ -351,3 +352,4 @@ left = A @ v
 right = sigma * (M @ v)
 residual_error = np.linalg.norm(left - right)
 print(f"The residual error is {residual_error}")
+'''''''''
